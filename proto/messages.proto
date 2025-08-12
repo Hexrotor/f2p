@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package p2pforward;
+
+option go_package = "github.com/Hexrotor/f2p/proto";
+
+// 统一的消息类型
+enum MessageType {
+  PASSWORD_REQUIRED = 0;
+  AUTH_REQUEST = 1;
+  AUTH_RESPONSE = 2;
+  SERVICE_REQUEST = 3;
+  SERVICE_RESPONSE = 4;
+  SERVER_SHUTDOWN = 5;
+  CLIENT_SHUTDOWN = 6;
+  HEARTBEAT = 7;
+}
+
+// 错误代码枚举
+enum ErrorCode {
+  NO_ERROR = 0;
+  SERVICE_NOT_FOUND = 1;
+  PROTOCOL_NOT_SUPPORTED = 2;
+  SERVICE_DISABLED = 3;
+  INVALID_PASSWORD = 4;
+  PASSWORD_REQUIRED_ERROR = 5;
+  AUTH_FAILED = 6;
+}
+
+// 统一的消息结构
+message UnifiedMessage {
+  MessageType type = 1;
+  
+  // 认证相关字段
+  string password = 2;
+  bool success = 3;
+  bool require_password = 4;
+  
+  // 服务请求相关字段
+  string service_name = 5;
+  string protocol = 6;
+  string service_password = 7;
+  
+  // 通用字段
+  string message = 8;
+  ErrorCode error_code = 9;
+  map<string, string> data = 10;
+}
