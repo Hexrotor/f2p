@@ -53,12 +53,20 @@ jobs:
           tar -C dist -czf "dist/${BASE}.tar.gz" "${BASE}"
           rm -rf "dist/${BASE}"
 
-      - name: Upload artifact
+      - name: Upload artifact (linux amd64)
         uses: actions/upload-artifact@v4
         with:
-          name: f2p_linux
+          name: f2p_linux_amd64
           path: |
-            dist/*.tar.gz
+            dist/*linux_amd64.tar.gz
+          if-no-files-found: error
+
+      - name: Upload artifact (linux arm64)
+        uses: actions/upload-artifact@v4
+        with:
+          name: f2p_linux_arm64
+          path: |
+            dist/*linux_arm64.tar.gz
           if-no-files-found: error
 
   build-windows:
@@ -106,7 +114,7 @@ jobs:
       - build-linux
       - build-windows
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
+    if: ${{ github.event_name == 'release' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v4
