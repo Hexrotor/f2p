@@ -101,11 +101,24 @@ jobs:
           CC=x86_64-w64-mingw32-gcc CGO_ENABLED=1 GOOS=windows GOARCH=amd64 \
             go build -ldflags="-s -w" -o "dist/f2p_${VERSION}_windows_amd64.exe" ./cmd/f2p
 
+      - name: Package (zip)
+        shell: pwsh
+        run: |
+          $version = "$env:GITHUB_REF_NAME"
+          if ([string]::IsNullOrWhiteSpace($version)) { $version = "dev" }
+          $base = "f2p_${version}_windows_amd64"
+          New-Item -ItemType Directory -Force -Path "dist/$base" | Out-Null
+          Move-Item "dist/f2p_${version}_windows_amd64.exe" "dist/$base/f2p.exe"
+          if (Test-Path LICENSE) { Copy-Item LICENSE "dist/$base/" }
+          if (Test-Path README.md) { Copy-Item README.md "dist/$base/" }
+          Compress-Archive -Path "dist/$base/*" -DestinationPath "dist/$base.zip" -Force
+          Remove-Item -Recurse -Force "dist/$base"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: f2p_windows_amd64
-          path: dist/*
+          path: dist/*.zip
           if-no-files-found: error
 
   release:
