@@ -26,19 +26,29 @@ jobs:
       - name: Install build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential
+          sudo apt-get install -y build-essential gcc-aarch64-linux-gnu
 
-      - name: Build (CGO enabled)
+      - name: "Build (CGO enabled: amd64 + arm64 via cross)"
         shell: bash
         run: |
           mkdir -p dist
           VERSION="${GITHUB_REF_NAME:-dev}"
+          # linux/amd64
           CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
-            go build -ldflags="-s -w" -o "dist/f2p_${VERSION}_linux_amd64" ./cmd/f2p
-          # package tar.gz with LICENSE and README
+            go build -ldflags="-s -w" -o "dist/f2p_${VERSION}_linux_amd64.bin" ./cmd/f2p
           BASE="f2p_${VERSION}_linux_amd64"
           mkdir -p "dist/${BASE}"
-          mv "dist/f2p_${VERSION}_linux_amd64" "dist/${BASE}/f2p"
+          mv "dist/f2p_${VERSION}_linux_amd64.bin" "dist/${BASE}/f2p"
+          cp LICENSE README.md "dist/${BASE}/" 2>/dev/null || true
+          tar -C dist -czf "dist/${BASE}.tar.gz" "${BASE}"
+          rm -rf "dist/${BASE}"
+
+          # linux/arm64 via cross-compiler
+          CC=aarch64-linux-gnu-gcc CGO_ENABLED=1 GOOS=linux GOARCH=arm64 \
+            go build -ldflags="-s -w" -o "dist/f2p_${VERSION}_linux_arm64.bin" ./cmd/f2p
+          BASE="f2p_${VERSION}_linux_arm64"
+          mkdir -p "dist/${BASE}"
+          mv "dist/f2p_${VERSION}_linux_arm64.bin" "dist/${BASE}/f2p"
           cp LICENSE README.md "dist/${BASE}/" 2>/dev/null || true
           tar -C dist -czf "dist/${BASE}.tar.gz" "${BASE}"
           rm -rf "dist/${BASE}"
@@ -46,48 +56,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: f2p_linux_amd64
-          path: |
-            dist/*.tar.gz
-          if-no-files-found: error
-
-  build-linux-arm64:
-    name: build linux-arm64 (CGO)
-    runs-on: ubuntu-22.04-arm64
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '>=1.21'
-          cache: true
-
-      - name: Install build tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential
-
-      - name: Build (CGO enabled)
-        shell: bash
-        run: |
-          mkdir -p dist
-          VERSION="${GITHUB_REF_NAME:-dev}"
-          CGO_ENABLED=1 GOOS=linux GOARCH=arm64 \
-            go build -ldflags="-s -w" -o "dist/f2p_${VERSION}_linux_arm64" ./cmd/f2p
-          # package tar.gz with LICENSE and README
-          BASE="f2p_${VERSION}_linux_arm64"
-          mkdir -p "dist/${BASE}"
-          mv "dist/f2p_${VERSION}_linux_arm64" "dist/${BASE}/f2p"
-          cp LICENSE README.md "dist/${BASE}/"
-          tar -C dist -czf "dist/${BASE}.tar.gz" "${BASE}"
-          rm -rf "dist/${BASE}"
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: f2p_linux_arm64
+          name: f2p_linux
           path: |
             dist/*.tar.gz
           if-no-files-found: error
@@ -135,7 +104,6 @@ jobs:
     name: publish release
     needs:
       - build-linux
-      - build-linux-arm64
       - build-windows
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
