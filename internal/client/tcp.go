@@ -7,32 +7,6 @@ import (
 	"github.com/Hexrotor/f2p/internal/config"
 )
 
-func (c *Client) startLocalServices() {
-	slog.Info("Starting local services")
-	for _, localService := range c.localServices {
-		if !localService.Enabled {
-			slog.Debug("Skipping disabled local service", "service", localService.Name)
-			continue
-		}
-		go c.startLocalService(localService)
-	}
-}
-
-func (c *Client) startLocalService(localService *config.LocalServiceConfig) {
-	slog.Info("Starting local service", "name", localService.Name, "protocols", localService.Protocol, "address", localService.Local)
-
-	for _, protocolType := range localService.Protocol {
-		switch protocolType {
-		case "tcp":
-			go c.startTCPService(localService)
-		case "udp":
-			go c.startUDPService(localService)
-		default:
-			slog.Error("Unsupported protocol", "protocol", protocolType)
-		}
-	}
-}
-
 func (c *Client) startTCPService(localService *config.LocalServiceConfig) {
 	listener, err := net.Listen("tcp", localService.Local)
 	if err != nil {

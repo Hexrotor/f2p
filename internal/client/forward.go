@@ -11,6 +11,32 @@ import (
 	"github.com/libp2p/go-libp2p/core/protocol"
 )
 
+func (c *Client) startLocalServices() {
+	slog.Info("Starting local services")
+	for _, localService := range c.localServices {
+		if !localService.Enabled {
+			slog.Debug("Skipping disabled local service", "service", localService.Name)
+			continue
+		}
+		go c.startLocalService(localService)
+	}
+}
+
+func (c *Client) startLocalService(localService *config.LocalServiceConfig) {
+	slog.Info("Starting local service", "name", localService.Name, "protocols", localService.Protocol, "address", localService.Local)
+
+	for _, protocolType := range localService.Protocol {
+		switch protocolType {
+		case "tcp":
+			go c.startTCPService(localService)
+		case "udp":
+			go c.startUDPService(localService)
+		default:
+			slog.Error("Unsupported protocol", "protocol", protocolType)
+		}
+	}
+}
+
 // handleLocalConnForProtocol unifies TCP/UDP per-connection flow: zstd decision → New data stream → SERVICE_REQUEST → proxy
 func (c *Client) handleLocalConnForProtocol(local io.ReadWriteCloser, localService *config.LocalServiceConfig, protocolType string) {
 	defer local.Close()

@@ -15,9 +15,9 @@ F2P 是一个基于 libp2p 的远程端口转发程序，支持 TCP+UDP，使用
 
 #### Windows
 1. 安装 [MinGW-w64](https://www.mingw-w64.org/) 并配置到 PATH。
-2. 编译命令：
+2. 编译：
   ```powershell
-  go build -ldflags="-s -w" -o build\f2p.exe .\cmd\f2p
+  $env:CGO_ENABLED=1; go build -ldflags="-s -w" -o build\f2p.exe .\cmd\f2p
   ```
 
 #### Linux
@@ -25,14 +25,20 @@ F2P 是一个基于 libp2p 的远程端口转发程序，支持 TCP+UDP，使用
   ```bash
   sudo apt update && sudo apt install build-essential
   ```
-2. 编译命令：
+1. 编译：
   ```bash
-  go build -ldflags="-s -w" -o build/f2p ./cmd/f2p
+  CGO_ENABLED=1 go build -ldflags="-s -w" -o build/f2p ./cmd/f2p
   ```
 
 ## 工作模式
 
 本程序为 C/S 架构，Server 和后端服务需要运行在同一网络环境中，Client 通过 p2p 连接到 Server 以访问其环境中的后端服务。DHT 网络使得客户端可以通过服务器 PeerID 查找并连接到服务器。服务器可设置连接密码，客户端认证通过后方可建立端口转发服务。
+
+### p2p 连接原理
+
+- 主机发现：libp2p 由 IPFS 项目衍生而来，可以直接接入 IPFS 的 DHT 网络，在 DHT 网络中客户端可以通过 peerID 获取到对应 peer 的 multiaddr 从而发起连接
+- 建立连接：libp2p 制定了一套自动中继机制与 NAT 打洞机制，本程序服务端会自动注册一批 peer 用于自身的中继。客户端在 DHT 网络中寻找服务端时，往往会先得到服务端的中继地址先建立中继连接，随后 libp2p 会尝试将其升级为打洞直连。
+- 目前的问题：若服务端既没有公网 IPv4，也不能通过 IPv6 或打洞实现直连，则最终连接会失败。因为 libp2p 规定了中继能提供的服务是有限的，如果不在代码中显式指定 WithAllowLimitedConn，就不能使用中继建立 stream。经过测试，中继似乎最多允许一个 stream，局限性太大并且延迟高，故暂时不考虑启用。
 
 ## 命令参数
 
