@@ -122,11 +122,6 @@ func (c *Client) authenticateWithServer(controlStream network.Stream, serverPeer
 			password = cached
 		} else {
 			password = utils.AskPassword("Enter server password: ")
-			// Cache it for future reconnects
-			c.authMu.Lock()
-			c.cachedServerPassword = password
-			c.hasCachedServerPassword = true
-			c.authMu.Unlock()
 		}
 	}
 	// Step 3: send auth request
