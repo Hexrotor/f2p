@@ -1,45 +1,47 @@
 # F2P
 
-[![Build test](https://github.com/Hexrotor/f2p/actions/workflows/testBuild.yml/badge.svg)](https://github.com/Hexrotor/f2p/actions/workflows/testBuild.yml)[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[[中文]](README_zh-cn.md)
 
-F2P 是一个基于 libp2p 的远程端口转发程序，支持 TCP+UDP，使用 Kademlia DHT 去中心化网络，无需公网 IP 设备即可实现端口转发。
+[![Build test](https://github.com/Hexrotor/f2p/actions/workflows/testBuild.yml/badge.svg)](https://github.com/Hexrotor/f2p/actions/workflows/testBuild.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-## 安装
+F2P is a remote port forwarding tool built on libp2p. It supports TCP + UDP and uses the Kademlia DHT for decentralized peer discovery; with IPv6 or UDP NAT hole punching it establishes direct connections, enabling port forwarding without public IP.
 
-从 [Releases](https://github.com/Hexrotor/f2p/releases) 下载或自行编译
+## Installation
 
-### 编译
+Download from [Releases](https://github.com/Hexrotor/f2p/releases) or build from source.
 
-本项目使用 CGO 以支持高性能 zstd 压缩，需确保本地有 C 编译环境。
+### Build
+
+This project uses CGO zstd for compression. Ensure you have working C toolchain.
 
 #### Windows
-1. 安装 [MinGW-w64](https://www.mingw-w64.org/) 并配置到 PATH。
-2. 编译：
-  ```powershell
-  $env:CGO_ENABLED=1; go build -ldflags="-s -w" -o build\f2p.exe .\cmd\f2p
-  ```
+1. Install [MinGW-w64](https://www.mingw-w64.org/) and add it to PATH.
+2. Build:
+   ```powershell
+   $env:CGO_ENABLED=1; go build -ldflags="-s -w" -o build\f2p.exe .\cmd\f2p
+   ```
 
 #### Linux
-1. 安装编译环境：
-  ```bash
-  sudo apt update && sudo apt install build-essential
-  ```
-1. 编译：
-  ```bash
-  CGO_ENABLED=1 go build -ldflags="-s -w" -o build/f2p ./cmd/f2p
-  ```
+1. Install toolchain:
+   ```bash
+   sudo apt update && sudo apt install build-essential
+   ```
+2. Build:
+   ```bash
+   CGO_ENABLED=1 go build -ldflags="-s -w" -o build/f2p ./cmd/f2p
+   ```
 
-## 工作模式
+## Working
 
-本程序为 C/S 架构，Server 和后端服务需要运行在同一网络环境中，Client 通过 p2p 连接到 Server 以访问其环境中的后端服务。DHT 网络使得客户端可以通过服务器 PeerID 查找并连接到服务器。服务器可设置连接密码，客户端认证通过后方可建立端口转发服务。
+This program follows a Client/Server architecture. The server and backend services reside in the same network environment. The client connects to the server over p2p to access backend services. Through the DHT, a client can find and dial the server via its PeerID. A password can be configured on the server; only authenticated clients can establish forwarding sessions.
 
-### p2p 连接原理
+### p2p Connection Principles
 
-- 主机发现：libp2p 由 IPFS 项目衍生而来，可以直接接入 IPFS 的 DHT 网络，在 DHT 网络中客户端可以通过 peerID 获取到对应 peer 的 multiaddr 从而发起连接
-- 建立连接：libp2p 制定了一套自动中继机制与 NAT 打洞机制，本程序服务端会自动注册一批 peer 用于自身的中继。客户端在 DHT 网络中寻找服务端时，往往会先得到服务端的中继地址先建立中继连接，随后 libp2p 会尝试将其升级为打洞直连。
-- 目前的问题：若服务端既没有公网 IPv4，也不能通过 IPv6 或打洞实现直连，则最终连接会失败。因为 libp2p 规定了中继能提供的服务是有限的，如果不在代码中显式指定 WithAllowLimitedConn，就不能使用中继建立 stream。经过测试，中继似乎最多允许一个 stream，局限性太大并且延迟高，故暂时不考虑启用。
+- Peer Discovery: libp2p (derived from IPFS) can join the IPFS DHT. In the DHT, a client resolves a server's `PeerID` to its `multiaddr` list, then attempts a connection.
+- Connection Establishment: libp2p provides automatic relay and NAT hole punching. The server registers some peers as relays. A client often first connects via a relay multiaddr, then libp2p attempts to upgrade to a direct hole-punched connection. **Use [NatTypeTester](https://github.com/HMBSbige/NatTypeTester) to test whether your network environment supports NAT hole punching.**
+- Current Limitation: If the server has no public IPv4 and also cannot be reached via IPv6 or hole punching, the final connection fails. libp2p limits relay usage, in my tests, without enabling `WithAllowLimitedConn` in code it can't freely open streams over relays. Relays appear to allow at most one stream and have limited bandwidth plus higher latency, so this project does not enable relayed streaming for now.
 
-## 命令参数
+## Command Line
 
 ```
 > f2p.exe -h
@@ -60,11 +62,11 @@ Examples:
   f2p server.toml          # Run with server.toml
 ```
 
-## 配置文件
+## Configuration File
 
-程序启动时会检查配置文件，默认为当前目录下的 `config.toml`。若配置文件不存在，会启动交互式创建流程；请由程序创建后再编辑 `services` 部分。
+At startup the program checks for a configuration file (default `config.toml` in current directory). If it doesn't exist an interactive setupwizard starts. Please edit the config only from program generated.
 
-### 配置文件示例与说明
+### Config Example
 
 ```toml
 is_server = true
@@ -75,24 +77,24 @@ peer_id = "..."
 
 [server]
 password_hash = "..."
-compress = true           # 默认启用 zstd 压缩，由服务器控制
+compress = true           # Enable zstd by default, controlled by server-side
 
 [[server.services]]
-name = "ssh"              # 服务名，客户端配的时候必须与服务器一致
-target = "127.0.0.1:22"   # 服务器目标后端服务
+name = "ssh"              # Service name; client must match this name with server
+target = "127.0.0.1:22"   # Backend target
 protocol = ["tcp"]
 enabled = false
 
 [[server.services]]
 name = "something"
 target = "127.0.0.1:5432"
-password = "123"          # 支持设置服务级密码
-protocol = ["tcp", "udp"] # 支持多协议
-compress = false          # 单服务压缩选项可覆盖
+password = "123"          # Optional per-service password
+protocol = ["tcp", "udp"] # Multi-protocol support
+compress = false          # Override compression at service level
 enabled = false
 
-[client]                  # 客户端配置
-server_id = "..."
+[client]
+server_id = "..."         # Server's peer ID
 
 [[client.services]]
 name = "ssh"
@@ -100,7 +102,7 @@ local = "127.0.0.1:2222"
 protocol = ["tcp"]
 enabled = false
 
-[[client.services]]       # 客户端只能被动接收服务器的压缩设定，暂时不能自己调整
+[[client.services]]       # Client passively accepts server compression settings, no selection for now
 name = "something"
 local = "127.0.0.1:15432"
 protocol = ["tcp", "udp"]
@@ -108,17 +110,17 @@ password = "123"
 enabled = false
 
 [common]
-protocol = "/f2p-forward/0.0.1"
-listen = ["/ip4/0.0.0.0/tcp/0", "/ip6/::/tcp/0", "/ip4/0.0.0.0/udp/0/webrtc-direct", "/ip4/0.0.0.0/udp/0/quic-v1", "/ip4/0.0.0.0/udp/0/quic-v1/webtransport", "/ip6/::/udp/0/webrtc-direct", "/ip6/::/udp/0/quic-v1", "/ip6/::/udp/0/quic-v1/webtransport"]  # libp2p multiaddr 监听地址，按需改动，端口 0 表示随机
+protocol = "/f2p-forward/0.0.1" # libp2p protocol, MUST match between server and client
+listen = ["/ip4/0.0.0.0/tcp/0", "/ip6/::/tcp/0", "/ip4/0.0.0.0/udp/0/webrtc-direct", "/ip4/0.0.0.0/udp/0/quic-v1", "/ip4/0.0.0.0/udp/0/quic-v1/webtransport", "/ip6/::/udp/0/webrtc-direct", "/ip6/::/udp/0/quic-v1", "/ip6/::/udp/0/quic-v1/webtransport"]
 log_level = "info"
-zstd_level = 20           # zstd 压缩等级 1-20，后续可能会调整默认值
-zstd_min_size_b = 256     # 压缩开启阈值，默认 256 字节
-zstd_chunk_size_kb = 32   # 压缩分块大小
+zstd_level = 20           # 1-20: higher = better compression + higher CPU
+zstd_min_size_b = 256     # Minimum payload size to trigger compression
+zstd_chunk_size_kb = 32   # Chunk size
 ```
 
 # zstd
 
-考虑到 p2p 通信的带宽可能并不理想，本项目引入了 zstd 压缩传输数据，经测试选择了使用 CGO zstd，纯 Go 实现会有很高的内存占用，GC 才会被释放。代码中会判断压缩后的数据大小，如果比原数据大就会发送原数据，但刚刚的 CPU 压缩开销浪费了。默认压缩等级现在为最高级 20，后续可能考虑为低性能设备更改默认值。
+Considring p2p may have constrained bandwidth, zstd compression is used. The project chooses the CGO-based zstd implementation; pure Go variants retain large RAM until GC. Each data frame is evaluated—if compression yields larger output the raw data is sent instead (CPU spent is lost but generally reduced bandwidth). Default level is currently 20, may adjust for low-CPU devices later. Suggestions welcome via issue/PR.
 
 ## License
 
