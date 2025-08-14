@@ -19,4 +19,4 @@ jobs:
         go-version: '1.24'
 
     - name: Build
-      run: CGO_ENABLED=1 go build -ldflags="-s -w" -o build\f2p .\cmd\f2p
+      run: CGO_ENABLED=1 go build -ldflags="-s -w" -o build/f2p ./cmd/f2p
