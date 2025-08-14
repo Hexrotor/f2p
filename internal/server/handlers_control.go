@@ -41,12 +41,12 @@ func (s *Server) handleControlStream(stream network.Stream) {
 
 func (s *Server) handleAuthenticationStream(stream network.Stream) error {
 	remotePeer := stream.Conn().RemotePeer()
-	handshake := message.NewMessager(stream, s.config, remotePeer)
+	messager := message.NewMessager(stream, s.config, remotePeer)
 
 	_ = stream.SetReadDeadline(time.Now().Add(30 * time.Second))
 	defer stream.SetReadDeadline(time.Time{})
 
-	if err := s.handleAuthOnControl(handshake); err != nil {
+	if err := s.handleAuthOnControl(messager); err != nil {
 		return fmt.Errorf("handshake failed: %v", err)
 	}
 	return nil

@@ -77,8 +77,11 @@ func (h *Messager) receiveMessage(timeout time.Duration) (*pb.UnifiedMessage, er
 		return nil, err
 	}
 	msgLen := uint32(lenBytes[0])<<24 | uint32(lenBytes[1])<<16 | uint32(lenBytes[2])<<8 | uint32(lenBytes[3])
-	if msgLen == 0 || msgLen > maxProtoMsgSize {
+	if msgLen > maxProtoMsgSize {
 		return nil, fmt.Errorf("invalid message size: %d", msgLen)
+	}
+	if msgLen == 0 {
+		return &pb.UnifiedMessage{}, nil
 	}
 	data := make([]byte, msgLen)
 	if _, err := io.ReadFull(h.conn, data); err != nil {
