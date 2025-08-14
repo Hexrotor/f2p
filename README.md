@@ -1,7 +1,6 @@
 # F2P
 
-[![Build](https://github.com/Hexrotor/f2p/actions/workflows/release.yml/badge.svg)](https://github.com/Hexrotor/f2p/actions/workflows/release.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Build test](https://github.com/Hexrotor/f2p/actions/workflows/testBuild.yml/badge.svg)](https://github.com/Hexrotor/f2p/actions/workflows/testBuild.yml)[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 F2P 是一个基于 libp2p 的远程端口转发程序，支持 TCP+UDP，使用 Kademlia DHT 去中心化网络，无需公网 IP 设备即可实现端口转发。
 

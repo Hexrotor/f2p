@@ -95,9 +95,7 @@ func (s *Server) monitorControlStream(clientSession *ClientSession) {
 			}
 
 			if msg.IsShutdownMessage() {
-				clientID := clientSession.peerID.String()
-				suffix := clientID[len(clientID)-8:]
-				slog.Info("Received shutdown notification from client", "client", fmt.Sprintf("...%s", suffix))
+				slog.Info("Received shutdown notification from client", "client", clientSession.peerID.String())
 				return
 			}
 
@@ -119,14 +117,10 @@ func (s *Server) monitorControlStream(clientSession *ClientSession) {
 
 func (s *Server) handleServiceVerificationRequest(handshake *message.Messager, msg *pb.UnifiedMessage) {
 	clientID := handshake.PeerID().String()
-	suffix := clientID
-	if len(suffix) > 8 {
-		suffix = suffix[len(suffix)-8:]
-	}
-	slog.Info("Service verification request received", "client", fmt.Sprintf("...%s", suffix), "service", msg.ServiceName, "protocol", msg.Protocol)
+	slog.Info("Service verification request received", "client", clientID, "service", msg.ServiceName, "protocol", msg.Protocol)
 
 	if msg.ServiceName == "" || msg.Protocol == "" {
-		slog.Warn("Invalid service verification request format", "client", fmt.Sprintf("...%s", suffix))
+		slog.Warn("Invalid service verification request format", "client", clientID)
 		_ = handshake.SendServiceResponse(false, pb.ErrorCode_NO_ERROR, "Invalid service request format", nil)
 		return
 	}
@@ -138,7 +132,7 @@ func (s *Server) handleServiceVerificationRequest(handshake *message.Messager, m
 		if service.Name == msg.ServiceName {
 			serviceExists = true
 			if !service.Enabled {
-				slog.Warn("Service verification failed: service disabled", "client", fmt.Sprintf("...%s", suffix), "service", msg.ServiceName)
+				slog.Warn("Service verification failed: service disabled", "client", clientID, "service", msg.ServiceName)
 				_ = handshake.SendServiceResponse(false, pb.ErrorCode_SERVICE_DISABLED, fmt.Sprintf("Service '%s' is disabled", msg.ServiceName), nil)
 				return
 			}
@@ -154,7 +148,7 @@ func (s *Server) handleServiceVerificationRequest(handshake *message.Messager, m
 	}
 
 	if !serviceExists {
-		slog.Warn("Service verification failed: service not found", "client", fmt.Sprintf("...%s", suffix), "service", msg.ServiceName)
+		slog.Warn("Service verification failed: service not found", "client", clientID, "service", msg.ServiceName)
 		_ = handshake.SendServiceResponse(false, pb.ErrorCode_SERVICE_NOT_FOUND, fmt.Sprintf("Service '%s' not found on server", msg.ServiceName), nil)
 		return
 	}
@@ -167,19 +161,19 @@ func (s *Server) handleServiceVerificationRequest(handshake *message.Messager, m
 				break
 			}
 		}
-		slog.Warn("Service verification failed: protocol not supported", "client", fmt.Sprintf("...%s", suffix), "service", msg.ServiceName, "protocol", msg.Protocol, "supported", supported)
+		slog.Warn("Service verification failed: protocol not supported", "client", clientID, "service", msg.ServiceName, "protocol", msg.Protocol, "supported", supported)
 		_ = handshake.SendServiceResponse(false, pb.ErrorCode_PROTOCOL_NOT_SUPPORTED, fmt.Sprintf("Protocol '%s' not supported for service '%s'. Supported protocols: %v", msg.Protocol, msg.ServiceName, supported), nil)
 		return
 	}
 
 	if targetService != nil && targetService.Password != "" {
 		if msg.ServicePassword == "" {
-			slog.Warn("Service verification failed: password required", "client", fmt.Sprintf("...%s", suffix), "service", msg.ServiceName)
+			slog.Warn("Service verification failed: password required", "client", clientID, "service", msg.ServiceName)
 			_ = handshake.SendServiceResponse(false, pb.ErrorCode_PASSWORD_REQUIRED_ERROR, fmt.Sprintf("Password required for service '%s'", msg.ServiceName), nil)
 			return
 		}
 		if msg.ServicePassword != targetService.Password {
-			slog.Warn("Service verification failed: invalid password", "client", fmt.Sprintf("...%s", suffix), "service", msg.ServiceName)
+			slog.Warn("Service verification failed: invalid password", "client", clientID, "service", msg.ServiceName)
 			_ = handshake.SendServiceResponse(false, pb.ErrorCode_INVALID_PASSWORD, fmt.Sprintf("Invalid password for service '%s'", msg.ServiceName), nil)
 			return
 		}

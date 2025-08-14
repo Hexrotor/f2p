@@ -14,7 +14,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
-
 	"github.com/Hexrotor/f2p/internal/config"
 	"github.com/Hexrotor/f2p/internal/utils"
 	dht "github.com/libp2p/go-libp2p-kad-dht"

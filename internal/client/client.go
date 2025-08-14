@@ -177,7 +177,7 @@ func (c *Client) startConnectionManager() {
 				default:
 				}
 
-				slog.Error("Connection failed", "error", err, "server", fmt.Sprintf("...%s", c.serverPeerID.ShortString()))
+				slog.Error("Connection failed", "error", err, "server", c.serverPeerID.ShortString())
 				interval := c.GetBackoff()
 				fmt.Printf("Retrying in %v...\n", interval)
 
@@ -268,7 +268,7 @@ func (c *Client) printClientInfo() {
 	output.WriteString("F2P Client Ready!\n")
 	output.WriteString(strings.Repeat("=", 60) + "\n")
 
-	output.WriteString(fmt.Sprintf("Connected to Server: ...%s\n", c.serverPeerID.ShortString()))
+	output.WriteString(fmt.Sprintf("Connected to Server: %s\n", c.serverPeerID.ShortString()))
 
 	output.WriteString("\nLocal Services:\n")
 	for _, service := range c.localServices {
