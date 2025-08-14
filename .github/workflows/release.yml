@@ -159,7 +159,7 @@ jobs:
           # android arm64 (API 21)
           export CC=aarch64-linux-android21-clang
           CGO_ENABLED=1 GOOS=android GOARCH=arm64 \
-            go build -ldflags="-s -w" -o "dist/f2p_${VERSION}_android_arm64.bin" ./cmd/f2p
+            go build -ldflags="-checklinkname=0 -s -w" -o "dist/f2p_${VERSION}_android_arm64.bin" ./cmd/f2p
           BASE="f2p_${VERSION}_android_arm64"
           mkdir -p dist/${BASE}
           mv "dist/f2p_${VERSION}_android_arm64.bin" "dist/${BASE}/f2p"
@@ -169,7 +169,7 @@ jobs:
           # android armv7 (API 21)
           export CC=armv7a-linux-androideabi21-clang
           CGO_ENABLED=1 GOOS=android GOARCH=arm GOARM=7 \
-            go build -ldflags="-s -w" -o "dist/f2p_${VERSION}_android_armv7.bin" ./cmd/f2p
+            go build -ldflags="-checklinkname=0 -s -w" -o "dist/f2p_${VERSION}_android_armv7.bin" ./cmd/f2p
           BASE="f2p_${VERSION}_android_armv7"
           mkdir -p dist/${BASE}
           mv "dist/f2p_${VERSION}_android_armv7.bin" "dist/${BASE}/f2p"
