@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log/slog"
@@ -26,36 +27,61 @@ func (s *Server) handleControlStream(stream network.Stream) {
 			slog.Warn("Authentication failed", "client", remotePeer.String(), "error", err)
 			time.Sleep(1 * time.Second)
 			_ = stream.Reset()
-			return
 		}
-		cs := &ClientSession{peerID: remotePeer, controlStream: stream, authTime: time.Now(), lastSeen: time.Now()}
-		s.clientsMutex.Lock()
-		s.authenticatedClients[remotePeer] = cs
-		s.clientsMutex.Unlock()
-		go s.monitorControlStream(cs)
 		return
 	}
 
-	s.monitorControlStream(&ClientSession{peerID: remotePeer, controlStream: stream, authTime: time.Now(), lastSeen: time.Now()})
+	// Replace old one, close it first
+	s.clientsMutex.Lock()
+	old := s.authenticatedClients[remotePeer]
+	if old != nil {
+		delete(s.authenticatedClients, remotePeer)
+	}
+	s.clientsMutex.Unlock()
+	if old != nil {
+		if old.controlDispatcher != nil {
+			old.controlDispatcher.Close()
+		}
+		if old.controlStream != nil {
+			_ = old.controlStream.Close()
+		}
+	}
+
+	mess := message.NewMessager(stream, s.config, remotePeer)
+	disp := message.NewDispatcher(mess)
+	disp.Start()
+	cs := &ClientSession{peerID: remotePeer, controlStream: stream, controlMessager: mess, controlDispatcher: disp, authTime: time.Now(), lastSeen: time.Now()}
+	s.clientsMutex.Lock()
+	s.authenticatedClients[remotePeer] = cs
+	s.clientsMutex.Unlock()
+	go s.monitorControlStream(cs)
 }
 
 func (s *Server) handleAuthenticationStream(stream network.Stream) error {
 	remotePeer := stream.Conn().RemotePeer()
 	messager := message.NewMessager(stream, s.config, remotePeer)
-
-	_ = stream.SetReadDeadline(time.Now().Add(30 * time.Second))
-	defer stream.SetReadDeadline(time.Time{})
-
-	if err := s.handleAuthOnControl(messager); err != nil {
+	disp := message.NewDispatcher(messager)
+	disp.Start()
+	if err := s.handleAuthOnControl(disp, messager); err != nil {
+		disp.Close()
 		return fmt.Errorf("handshake failed: %v", err)
 	}
+	cs := &ClientSession{peerID: remotePeer, controlStream: stream, controlMessager: messager, controlDispatcher: disp, authTime: time.Now(), lastSeen: time.Now()}
+	s.clientsMutex.Lock()
+	s.authenticatedClients[remotePeer] = cs
+	s.clientsMutex.Unlock()
+	go s.monitorControlStream(cs)
 	return nil
 }
 
 func (s *Server) monitorControlStream(clientSession *ClientSession) {
 	defer func() {
 		s.clientsMutex.Lock()
-		delete(s.authenticatedClients, clientSession.peerID)
+		// Pretend removing the new session
+		current := s.authenticatedClients[clientSession.peerID]
+		if current != nil && current.controlStream == clientSession.controlStream {
+			delete(s.authenticatedClients, clientSession.peerID)
+		}
 		s.clientsMutex.Unlock()
 
 		slog.Info("Client disconnected", "client", clientSession.peerID.String())
@@ -63,26 +89,56 @@ func (s *Server) monitorControlStream(clientSession *ClientSession) {
 		if clientSession.controlStream != nil {
 			_ = clientSession.controlStream.Close()
 		}
+		if clientSession.controlDispatcher != nil {
+			clientSession.controlDispatcher.Close()
+		}
 	}()
 
-	handshake := message.NewMessager(clientSession.controlStream, s.config, clientSession.peerID)
+	messager := clientSession.controlMessager
 
-	heartbeatTicker := time.NewTicker(60 * time.Second)
+	heartbeatInterval := 30 * time.Second
+	heartbeatTicker := time.NewTicker(heartbeatInterval)
 	defer heartbeatTicker.Stop()
 
+	missed := 0
+	const maxMissed = 2
+
+	waitingAck := false
 	for {
 		select {
 		case <-s.ctx.Done():
 			return
 		case <-heartbeatTicker.C:
-			if err := handshake.SendHeartbeat(); err != nil {
-				slog.Error("Failed to send heartbeat to client", "error", err)
+			if err := messager.SendHeartbeat(); err != nil {
+				slog.Error("Failed to send heartbeat (ping)", "error", err)
 				return
 			}
+			waitingAck = true
 		default:
-			msg, err := handshake.ReceiveMessage()
+			if clientSession.controlDispatcher == nil {
+				time.Sleep(100 * time.Millisecond)
+				continue
+			}
+			ctx, cancel := context.WithTimeout(s.ctx, 5*time.Second)
+			var msg *pb.UnifiedMessage
+			var err error
+			if waitingAck {
+				msg, err = clientSession.controlDispatcher.WaitFor(ctx, pb.MessageType_HEARTBEAT, pb.MessageType_SERVICE_REQUEST, pb.MessageType_CLIENT_SHUTDOWN)
+			} else {
+				msg, err = clientSession.controlDispatcher.WaitFor(ctx, pb.MessageType_SERVICE_REQUEST, pb.MessageType_CLIENT_SHUTDOWN)
+			}
+			cancel()
 			if err != nil {
-				if strings.Contains(err.Error(), "deadline") || strings.Contains(err.Error(), "timeout") {
+				if ctx.Err() != nil {
+					if waitingAck {
+						missed++
+						slog.Warn("Heartbeat ack timeout", "client", clientSession.peerID.ShortString(), "missed", missed)
+						waitingAck = false
+						if missed > maxMissed {
+							slog.Error("Too many missed heartbeat acks, closing session", "client", clientSession.peerID.ShortString())
+							return
+						}
+					}
 					clientSession.mutex.Lock()
 					clientSession.lastSeen = time.Now()
 					clientSession.mutex.Unlock()
@@ -101,9 +157,12 @@ func (s *Server) monitorControlStream(clientSession *ClientSession) {
 
 			switch msg.Type {
 			case pb.MessageType_HEARTBEAT:
-				// ignore
+				if waitingAck && msg.Message == "pong" {
+					missed = 0
+					waitingAck = false
+				}
 			case pb.MessageType_SERVICE_REQUEST:
-				s.handleServiceVerificationRequest(handshake, msg)
+				s.handleServiceVerificationRequest(messager, msg)
 			default:
 				slog.Debug("Received control message from client", "type", msg.Type, "message", msg.Message)
 			}
@@ -187,14 +246,12 @@ func (s *Server) handleServiceVerificationRequest(handshake *message.Messager, m
 	_ = handshake.SendServiceResponse(true, pb.ErrorCode_NO_ERROR, fmt.Sprintf("Service '%s' verification successful with protocol '%s'", msg.ServiceName, msg.Protocol), data)
 }
 
-// handleServiceHandshake processes a SERVICE_REQUEST on a data stream.
+// handleServiceHandshake processes a SERVICE_REQUEST from client on a data stream.
+// handleServiceHandshake 仅用于数据流上的一次性 SERVICE_REQUEST 握手，不再依赖 dispatcher。
 func (s *Server) handleServiceHandshake(messager *message.Messager, requestedService *string, requestedProtocol *string) (*config.ServiceConfig, error) {
-	msg, err := messager.ReceiveMessage()
+	msg, err := messager.ReceiveOne(30 * time.Second)
 	if err != nil {
-		return nil, fmt.Errorf("failed to receive message: %v", err)
-	}
-	if msg.Type == pb.MessageType_CLIENT_SHUTDOWN {
-		return nil, fmt.Errorf("client_shutdown received")
+		return nil, fmt.Errorf("failed to receive service request: %v", err)
 	}
 	if msg.Type != pb.MessageType_SERVICE_REQUEST {
 		return nil, fmt.Errorf("expected service_request, got %s", msg.Type)
@@ -267,7 +324,7 @@ func (s *Server) handleServiceHandshake(messager *message.Messager, requestedSer
 }
 
 // handleAuthOnControl performs server-side password auth on control stream.
-func (s *Server) handleAuthOnControl(messager *message.Messager) error {
+func (s *Server) handleAuthOnControl(disp *message.Dispatcher, messager *message.Messager) error {
 	passwordRequired := s.config.Server.PasswordHash != ""
 	if err := messager.SendPasswordRequired(passwordRequired); err != nil {
 		return fmt.Errorf("failed to send password requirement: %v", err)
@@ -276,10 +333,15 @@ func (s *Server) handleAuthOnControl(messager *message.Messager) error {
 	if passwordRequired {
 		slog.Info("Waiting for client authentication", "timeout", "30s", "client", messager.PeerID().String())
 	}
-	msg, err := messager.ReceiveMessageWithTimeout(authTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), authTimeout)
+	defer cancel()
+	msg, err := disp.WaitFor(ctx, pb.MessageType_AUTH_REQUEST, pb.MessageType_CLIENT_SHUTDOWN)
 	if err != nil {
 		_ = messager.SendAuthResponse(false, "timeout")
 		return fmt.Errorf("failed to receive auth request: %v", err)
+	}
+	if msg.Type == pb.MessageType_CLIENT_SHUTDOWN {
+		return fmt.Errorf("client requested shutdown during auth")
 	}
 	if msg.Type != pb.MessageType_AUTH_REQUEST {
 		return fmt.Errorf("expected auth_request, got %s", msg.Type)

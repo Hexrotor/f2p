@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/Hexrotor/f2p/internal/message"
 	"github.com/Hexrotor/f2p/internal/utils"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/peerstore"
@@ -37,13 +38,15 @@ func (c *Client) connectToServer(peerID peer.ID) error {
 
 	c.streamMutex.Lock()
 	c.controlStream = controlStream
+	c.controlMessager = message.NewMessager(controlStream, c.config, peerID)
+	c.controlDispatcher = message.NewDispatcher(c.controlMessager)
+	c.controlDispatcher.Start()
 	c.streamMutex.Unlock()
 
-	if err := c.authenticateWithServer(controlStream, peerID); err != nil {
+	if err := c.authenticateWithServer(); err != nil {
 		controlStream.Close()
 		return fmt.Errorf("authentication failed: %v", err)
 	}
-
 	if err := c.verifyServiceConfiguration(); err != nil {
 		controlStream.Close()
 		fmt.Printf("Service verification failed - this should be your configuration issue!\nPlease check your client configuration and ensure services exist on server.\n")

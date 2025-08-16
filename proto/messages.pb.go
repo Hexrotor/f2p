@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.7
 // 	protoc        v6.31.1
-// source: messages.proto
+// source: proto/messages.proto
 
 package proto
 
@@ -71,11 +71,11 @@ func (x MessageType) String() string {
 }
 
 func (MessageType) Descriptor() protoreflect.EnumDescriptor {
-	return file_messages_proto_enumTypes[0].Descriptor()
+	return file_proto_messages_proto_enumTypes[0].Descriptor()
 }
 
 func (MessageType) Type() protoreflect.EnumType {
-	return &file_messages_proto_enumTypes[0]
+	return &file_proto_messages_proto_enumTypes[0]
 }
 
 func (x MessageType) Number() protoreflect.EnumNumber {
@@ -84,7 +84,7 @@ func (x MessageType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use MessageType.Descriptor instead.
 func (MessageType) EnumDescriptor() ([]byte, []int) {
-	return file_messages_proto_rawDescGZIP(), []int{0}
+	return file_proto_messages_proto_rawDescGZIP(), []int{0}
 }
 
 // 错误代码枚举
@@ -133,11 +133,11 @@ func (x ErrorCode) String() string {
 }
 
 func (ErrorCode) Descriptor() protoreflect.EnumDescriptor {
-	return file_messages_proto_enumTypes[1].Descriptor()
+	return file_proto_messages_proto_enumTypes[1].Descriptor()
 }
 
 func (ErrorCode) Type() protoreflect.EnumType {
-	return &file_messages_proto_enumTypes[1]
+	return &file_proto_messages_proto_enumTypes[1]
 }
 
 func (x ErrorCode) Number() protoreflect.EnumNumber {
@@ -146,7 +146,7 @@ func (x ErrorCode) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ErrorCode.Descriptor instead.
 func (ErrorCode) EnumDescriptor() ([]byte, []int) {
-	return file_messages_proto_rawDescGZIP(), []int{1}
+	return file_proto_messages_proto_rawDescGZIP(), []int{1}
 }
 
 // 统一的消息结构
@@ -162,16 +162,18 @@ type UnifiedMessage struct {
 	Protocol        string `protobuf:"bytes,6,opt,name=protocol,proto3" json:"protocol,omitempty"`
 	ServicePassword string `protobuf:"bytes,7,opt,name=service_password,json=servicePassword,proto3" json:"service_password,omitempty"`
 	// 通用字段
-	Message       string            `protobuf:"bytes,8,opt,name=message,proto3" json:"message,omitempty"`
-	ErrorCode     ErrorCode         `protobuf:"varint,9,opt,name=error_code,json=errorCode,proto3,enum=p2pforward.ErrorCode" json:"error_code,omitempty"`
-	Data          map[string]string `protobuf:"bytes,10,rep,name=data,proto3" json:"data,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Message   string            `protobuf:"bytes,8,opt,name=message,proto3" json:"message,omitempty"`
+	ErrorCode ErrorCode         `protobuf:"varint,9,opt,name=error_code,json=errorCode,proto3,enum=p2pforward.ErrorCode" json:"error_code,omitempty"`
+	Data      map[string]string `protobuf:"bytes,10,rep,name=data,proto3" json:"data,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// 消息 TTL (毫秒). 0 表示使用默认 30_000ms。发送端禁止超过 60_000ms。
+	TtlMs         uint32 `protobuf:"varint,11,opt,name=ttl_ms,json=ttlMs,proto3" json:"ttl_ms,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *UnifiedMessage) Reset() {
 	*x = UnifiedMessage{}
-	mi := &file_messages_proto_msgTypes[0]
+	mi := &file_proto_messages_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -183,7 +185,7 @@ func (x *UnifiedMessage) String() string {
 func (*UnifiedMessage) ProtoMessage() {}
 
 func (x *UnifiedMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_messages_proto_msgTypes[0]
+	mi := &file_proto_messages_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -196,7 +198,7 @@ func (x *UnifiedMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnifiedMessage.ProtoReflect.Descriptor instead.
 func (*UnifiedMessage) Descriptor() ([]byte, []int) {
-	return file_messages_proto_rawDescGZIP(), []int{0}
+	return file_proto_messages_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *UnifiedMessage) GetType() MessageType {
@@ -269,12 +271,19 @@ func (x *UnifiedMessage) GetData() map[string]string {
 	return nil
 }
 
-var File_messages_proto protoreflect.FileDescriptor
+func (x *UnifiedMessage) GetTtlMs() uint32 {
+	if x != nil {
+		return x.TtlMs
+	}
+	return 0
+}
 
-const file_messages_proto_rawDesc = "" +
+var File_proto_messages_proto protoreflect.FileDescriptor
+
+const file_proto_messages_proto_rawDesc = "" +
 	"\n" +
-	"\x0emessages.proto\x12\n" +
-	"p2pforward\"\xcb\x03\n" +
+	"\x14proto/messages.proto\x12\n" +
+	"p2pforward\"\xe2\x03\n" +
 	"\x0eUnifiedMessage\x12+\n" +
 	"\x04type\x18\x01 \x01(\x0e2\x17.p2pforward.MessageTypeR\x04type\x12\x1a\n" +
 	"\bpassword\x18\x02 \x01(\tR\bpassword\x12\x18\n" +
@@ -287,7 +296,8 @@ const file_messages_proto_rawDesc = "" +
 	"\n" +
 	"error_code\x18\t \x01(\x0e2\x15.p2pforward.ErrorCodeR\terrorCode\x128\n" +
 	"\x04data\x18\n" +
-	" \x03(\v2$.p2pforward.UnifiedMessage.DataEntryR\x04data\x1a7\n" +
+	" \x03(\v2$.p2pforward.UnifiedMessage.DataEntryR\x04data\x12\x15\n" +
+	"\x06ttl_ms\x18\v \x01(\rR\x05ttlMs\x1a7\n" +
 	"\tDataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*\xad\x01\n" +
@@ -307,29 +317,29 @@ const file_messages_proto_rawDesc = "" +
 	"\x10SERVICE_DISABLED\x10\x03\x12\x14\n" +
 	"\x10INVALID_PASSWORD\x10\x04\x12\x1b\n" +
 	"\x17PASSWORD_REQUIRED_ERROR\x10\x05\x12\x0f\n" +
-	"\vAUTH_FAILED\x10\x06B'Z%github.com/Hexrotor/f2p/protob\x06proto3"
+	"\vAUTH_FAILED\x10\x06B\x1fZ\x1dgithub.com/Hexrotor/f2p/protob\x06proto3"
 
 var (
-	file_messages_proto_rawDescOnce sync.Once
-	file_messages_proto_rawDescData []byte
+	file_proto_messages_proto_rawDescOnce sync.Once
+	file_proto_messages_proto_rawDescData []byte
 )
 
-func file_messages_proto_rawDescGZIP() []byte {
-	file_messages_proto_rawDescOnce.Do(func() {
-		file_messages_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_messages_proto_rawDesc), len(file_messages_proto_rawDesc)))
+func file_proto_messages_proto_rawDescGZIP() []byte {
+	file_proto_messages_proto_rawDescOnce.Do(func() {
+		file_proto_messages_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_proto_messages_proto_rawDesc), len(file_proto_messages_proto_rawDesc)))
 	})
-	return file_messages_proto_rawDescData
+	return file_proto_messages_proto_rawDescData
 }
 
-var file_messages_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_messages_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
-var file_messages_proto_goTypes = []any{
+var file_proto_messages_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_proto_messages_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_proto_messages_proto_goTypes = []any{
 	(MessageType)(0),       // 0: p2pforward.MessageType
 	(ErrorCode)(0),         // 1: p2pforward.ErrorCode
 	(*UnifiedMessage)(nil), // 2: p2pforward.UnifiedMessage
 	nil,                    // 3: p2pforward.UnifiedMessage.DataEntry
 }
-var file_messages_proto_depIdxs = []int32{
+var file_proto_messages_proto_depIdxs = []int32{
 	0, // 0: p2pforward.UnifiedMessage.type:type_name -> p2pforward.MessageType
 	1, // 1: p2pforward.UnifiedMessage.error_code:type_name -> p2pforward.ErrorCode
 	3, // 2: p2pforward.UnifiedMessage.data:type_name -> p2pforward.UnifiedMessage.DataEntry
@@ -340,27 +350,27 @@ var file_messages_proto_depIdxs = []int32{
 	0, // [0:3] is the sub-list for field type_name
 }
 
-func init() { file_messages_proto_init() }
-func file_messages_proto_init() {
-	if File_messages_proto != nil {
+func init() { file_proto_messages_proto_init() }
+func file_proto_messages_proto_init() {
+	if File_proto_messages_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_messages_proto_rawDesc), len(file_messages_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_messages_proto_rawDesc), len(file_proto_messages_proto_rawDesc)),
 			NumEnums:      2,
 			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
-		GoTypes:           file_messages_proto_goTypes,
-		DependencyIndexes: file_messages_proto_depIdxs,
-		EnumInfos:         file_messages_proto_enumTypes,
-		MessageInfos:      file_messages_proto_msgTypes,
+		GoTypes:           file_proto_messages_proto_goTypes,
+		DependencyIndexes: file_proto_messages_proto_depIdxs,
+		EnumInfos:         file_proto_messages_proto_enumTypes,
+		MessageInfos:      file_proto_messages_proto_msgTypes,
 	}.Build()
-	File_messages_proto = out.File
-	file_messages_proto_goTypes = nil
-	file_messages_proto_depIdxs = nil
+	File_proto_messages_proto = out.File
+	file_proto_messages_proto_goTypes = nil
+	file_proto_messages_proto_depIdxs = nil
 }

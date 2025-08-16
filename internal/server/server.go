@@ -8,15 +8,16 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Hexrotor/f2p/internal/config"
+	"github.com/Hexrotor/f2p/internal/message"
+	"github.com/Hexrotor/f2p/internal/utils"
 	"github.com/libp2p/go-libp2p"
+	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
-	"github.com/Hexrotor/f2p/internal/config"
-	"github.com/Hexrotor/f2p/internal/utils"
-	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/multiformats/go-multiaddr"
 )
 
@@ -32,11 +33,13 @@ type Server struct {
 }
 
 type ClientSession struct {
-	peerID        peer.ID
-	controlStream network.Stream
-	authTime      time.Time
-	lastSeen      time.Time
-	mutex         sync.RWMutex
+	peerID            peer.ID
+	controlStream     network.Stream
+	controlMessager   *message.Messager
+	controlDispatcher *message.Dispatcher
+	authTime          time.Time
+	lastSeen          time.Time
+	mutex             sync.RWMutex
 }
 
 func NewServer(cfg *config.Config) *Server {
