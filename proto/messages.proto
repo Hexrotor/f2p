@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package p2pforward;
+package proto;
 
 option go_package = "github.com/Hexrotor/f2p/proto";
 
@@ -45,4 +45,6 @@ message UnifiedMessage {
   string message = 8;
   ErrorCode error_code = 9;
   map<string, string> data = 10;
+  // 消息 TTL (毫秒). 0 表示使用默认 30_000ms。发送端禁止超过 60_000ms。
+  uint32 ttl_ms = 11;
 }

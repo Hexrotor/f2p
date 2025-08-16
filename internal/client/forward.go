@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Hexrotor/f2p/internal/config"
+	"github.com/Hexrotor/f2p/internal/message"
 	"github.com/Hexrotor/f2p/internal/utils"
 	"github.com/libp2p/go-libp2p/core/protocol"
 )
@@ -75,8 +76,9 @@ func (c *Client) handleLocalConnForProtocol(local io.ReadWriteCloser, localServi
 		rw = z
 	}
 
-	// Use checkServiceAvailability for service handshake
-	if _, err := c.checkServiceAvailability(rw, c.serverPeerID, localService.Name, protocolType, localService.Password); err != nil {
+	// Service handshake (数据流：一次性请求+响应，传 nil dispatcher 触发单次读取)
+	m := message.NewMessager(rw, c.config, c.serverPeerID)
+	if _, err := c.checkServiceAvailability(m, nil, localService.Name, protocolType, localService.Password); err != nil {
 		slog.Error("Check failed for service", "service", localService.Name, "protocol", protocolType, "error", err, "server", c.serverPeerID.ShortString())
 		rw.Close()
 		return

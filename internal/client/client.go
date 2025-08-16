@@ -25,15 +25,17 @@ import (
 )
 
 type Client struct {
-	config        *config.Config
-	host          host.Host
-	dht           *dht.IpfsDHT
-	ctx           context.Context
-	cancel        context.CancelFunc
-	localServices map[string]*config.LocalServiceConfig
-	serverPeerID  peer.ID
-	controlStream network.Stream
-	streamMutex   sync.RWMutex
+	config            *config.Config
+	host              host.Host
+	dht               *dht.IpfsDHT
+	ctx               context.Context
+	cancel            context.CancelFunc
+	localServices     map[string]*config.LocalServiceConfig
+	serverPeerID      peer.ID
+	controlStream     network.Stream
+	controlMessager   *message.Messager
+	controlDispatcher *message.Dispatcher
+	streamMutex       sync.RWMutex
 
 	compMutex       sync.RWMutex
 	serviceCompress map[string]bool
@@ -204,10 +206,16 @@ func (c *Client) Stop() error {
 	c.streamMutex.RUnlock()
 
 	if controlStream != nil {
-		handshake := message.NewMessager(controlStream, c.config, c.serverPeerID)
-		handshake.SendClientShutdownNotification()
+		if c.controlMessager != nil {
+			_ = c.controlMessager.SendClientShutdownNotification()
+		}
 		controlStream.Close()
 	}
+	c.streamMutex.Lock()
+	if c.controlDispatcher != nil {
+		c.controlDispatcher.Close()
+	}
+	c.streamMutex.Unlock()
 
 	c.cancel()
 

@@ -1,28 +1,19 @@
 package client
 
 import (
+	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/Hexrotor/f2p/internal/message"
 	"github.com/Hexrotor/f2p/internal/utils"
 	pb "github.com/Hexrotor/f2p/proto"
-	"github.com/libp2p/go-libp2p/core/network"
-	"github.com/libp2p/go-libp2p/core/peer"
 )
 
 func (c *Client) verifyServiceConfiguration() error {
 	slog.Info("Verifying service configuration")
-
-	c.streamMutex.RLock()
-	controlStream := c.controlStream
-	c.streamMutex.RUnlock()
-
-	if controlStream == nil || c.serverPeerID == "" {
-		return fmt.Errorf("no active control stream available for verification")
-	}
 
 	for _, service := range c.config.Client.Services {
 		if !service.Enabled {
@@ -32,7 +23,7 @@ func (c *Client) verifyServiceConfiguration() error {
 
 		for _, protocolType := range service.Protocol {
 			slog.Debug("Verifying service", "name", service.Name, "protocol", protocolType)
-			if err := c.verifyServiceOnControlStream(service.Name, protocolType, service.Password, controlStream, c.serverPeerID); err != nil {
+			if err := c.verifyServiceOnControlStream(service.Name, protocolType, service.Password); err != nil {
 				slog.Error("Service verification failed", "service", service.Name, "protocol", protocolType, "error", err)
 				fmt.Printf("Service verification failed for '%s' (%s): %v\n", service.Name, protocolType, err)
 				fmt.Println("Client will terminate due to service verification failure")
@@ -46,8 +37,15 @@ func (c *Client) verifyServiceConfiguration() error {
 	return nil
 }
 
-func (c *Client) verifyServiceOnControlStream(serviceName, protocolType, servicePassword string, controlStream network.Stream, serverPeerID peer.ID) error {
-	resp, err := c.checkServiceAvailability(controlStream, serverPeerID, serviceName, protocolType, servicePassword)
+func (c *Client) verifyServiceOnControlStream(serviceName, protocolType, servicePassword string) error {
+	c.streamMutex.RLock()
+	disp := c.controlDispatcher
+	m := c.controlMessager
+	c.streamMutex.RUnlock()
+	if disp == nil || m == nil {
+		return fmt.Errorf("control dispatcher not ready")
+	}
+	resp, err := c.checkServiceAvailability(m, disp, serviceName, protocolType, servicePassword)
 	if err != nil {
 		return err
 	}
@@ -63,13 +61,25 @@ func (c *Client) verifyServiceOnControlStream(serviceName, protocolType, service
 	return nil
 }
 
-// checkServiceAvailability sends a SERVICE_REQUEST on the given control stream and returns the response.
-func (c *Client) checkServiceAvailability(rw io.ReadWriteCloser, serverPeerID peer.ID, serviceName, protocolType, servicePassword string) (*pb.UnifiedMessage, error) {
-	h := message.NewMessager(rw, c.config, serverPeerID)
-	if err := h.SendServiceRequest(serviceName, protocolType, servicePassword); err != nil {
+// checkServiceAvailability send SERVICE_REQUEST and wait for SERVICE_RESPONSE message
+// used for control stream handshake service verification and data stream service handshake
+func (c *Client) checkServiceAvailability(m *message.Messager, disp *message.Dispatcher, serviceName, protocolType, servicePassword string) (*pb.UnifiedMessage, error) {
+	if m == nil {
+		return nil, fmt.Errorf("messager not ready")
+	}
+	if err := m.SendServiceRequest(serviceName, protocolType, servicePassword); err != nil {
 		return nil, fmt.Errorf("service verification failed: %v", err)
 	}
-	resp, err := h.ReceiveMessage()
+	var resp *pb.UnifiedMessage
+	var err error
+	if disp != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		resp, err = disp.WaitFor(ctx, pb.MessageType_SERVICE_RESPONSE)
+	} else {
+		// 数据流一次性模式：直接同步读取一条
+		resp, err = m.ReceiveOne(30 * time.Second)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("service verification failed: %v", err)
 	}
@@ -100,15 +110,19 @@ func (c *Client) checkServiceAvailability(rw io.ReadWriteCloser, serverPeerID pe
 	return resp, nil
 }
 
-func (c *Client) authenticateWithServer(controlStream network.Stream, serverPeerID peer.ID) error {
-	messager := message.NewMessager(controlStream, c.config, serverPeerID)
-	// Step 1: read PASSWORD_REQUIRED from server
-	msg, err := messager.ReceiveMessage()
+func (c *Client) authenticateWithServer() error {
+	c.streamMutex.RLock()
+	disp := c.controlDispatcher
+	m := c.controlMessager
+	c.streamMutex.RUnlock()
+	if disp == nil || m == nil {
+		return fmt.Errorf("dispatcher not initialized")
+	}
+	ctxPwd, cancelPwd := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancelPwd()
+	msg, err := disp.WaitFor(ctxPwd, pb.MessageType_PASSWORD_REQUIRED)
 	if err != nil {
 		return fmt.Errorf("failed to receive password requirement: %v", err)
-	}
-	if msg.Type != pb.MessageType_PASSWORD_REQUIRED {
-		return fmt.Errorf("expected password_required, got %s", msg.Type)
 	}
 	// Step 2: determine password using cache; only prompt when needed
 	var password string
@@ -125,11 +139,12 @@ func (c *Client) authenticateWithServer(controlStream network.Stream, serverPeer
 		}
 	}
 	// Step 3: send auth request
-	if err := messager.SendAuthRequest(password); err != nil {
+	if err := m.SendAuthRequest(password); err != nil {
 		return fmt.Errorf("failed to send auth request: %v", err)
 	}
-	// Step 4: read auth response and validate
-	resp, err := messager.ReceiveMessage()
+	ctxAuth, cancelAuth := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancelAuth()
+	resp, err := disp.WaitFor(ctxAuth, pb.MessageType_AUTH_RESPONSE)
 	if err != nil {
 		return fmt.Errorf("failed to receive auth response: %v", err)
 	}
