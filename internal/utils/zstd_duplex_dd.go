@@ -27,9 +27,10 @@ type ZstdDuplex struct {
 	closeOnce sync.Once
 	closeErr  error
 
-	metaSide    string
-	metaService string
-	metaPeer    string
+	metaSide     string
+	metaService  string
+	metaPeer     string
+	metaProtocol string
 }
 
 const (
@@ -213,6 +214,7 @@ func (z *ZstdDuplex) Close() error {
 			slog.Debug("zstd summary",
 				"side", z.metaSide,
 				"service", z.metaService,
+				"protocol", z.metaProtocol,
 				"peer", z.metaPeer,
 				"wr_frames", z.wrFrames,
 				"wr_comp_frames", z.wrCompressed,
@@ -231,10 +233,18 @@ func (z *ZstdDuplex) Close() error {
 	return z.closeErr
 }
 
-func (z *ZstdDuplex) SetMeta(side, service, peer string) {
-	z.metaSide = side
-	z.metaService = service
-	z.metaPeer = peer
+func (z *ZstdDuplex) SetInfo(side, service, peer, protocol string) *ZstdDuplex {
+	if side != "" {
+		z.metaSide = side
+	}
+	if service != "" {
+		z.metaService = service
+	}
+	if peer != "" {
+		z.metaPeer = peer
+	}
+	if protocol != "" {
+		z.metaProtocol = protocol
+	}
+	return z
 }
-
-func (z *ZstdDuplex) SetService(service string) { z.metaService = service }

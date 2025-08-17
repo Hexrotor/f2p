@@ -43,7 +43,7 @@ func (s *Server) handleServiceStreamWithCompression(stream network.Stream, clien
 			_ = stream.Reset()
 			return err
 		}
-		z.SetMeta("server", "", clientPeer.ShortString())
+		z.SetInfo("server", "", clientPeer.ShortString(), "") // protocol & service later
 		rw = z
 	}
 
@@ -57,8 +57,11 @@ func (s *Server) handleServiceStreamWithCompression(stream network.Stream, clien
 	clientID := clientPeer.String()
 	slog.Info("Forwarding request", "client", clientID, "service", serviceName, "protocol", protocolType, "target", targetService.Target, "compress", useZstd)
 
-	if dz, ok := rw.(interface{ SetService(string) }); ok {
-		dz.SetService(serviceName)
+	if dz, ok := rw.(interface {
+		SetFields(string, string, string, string) *utils.ZstdDuplex
+	}); ok {
+		// Only service & protocol now (side/peer already set)
+		dz.SetFields("", serviceName, "", protocolType)
 	}
 
 	if err := s.connectAndProxy(rw, protocolType, targetService.Target); err != nil {

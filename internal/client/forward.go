@@ -72,7 +72,7 @@ func (c *Client) handleLocalConnForProtocol(local io.ReadWriteCloser, localServi
 			serverStream.Close()
 			return
 		}
-		z.SetMeta("client", localService.Name, c.serverPeerID.ShortString())
+		z.SetInfo("client", localService.Name, c.serverPeerID.ShortString(), protocolType)
 		rw = z
 	}
 
