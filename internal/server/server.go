@@ -28,6 +28,7 @@ type Server struct {
 	ctx                  context.Context
 	cancel               context.CancelFunc
 	services             map[string]*config.ServiceConfig
+	serviceProtocols     map[string]map[string]struct{} // per service protocol set for O(1) lookup
 	authenticatedClients map[peer.ID]*ClientSession
 	clientsMutex         sync.RWMutex
 }
@@ -46,9 +47,15 @@ func NewServer(cfg *config.Config) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	services := make(map[string]*config.ServiceConfig)
+	serviceProtocols := make(map[string]map[string]struct{})
 	for i := range cfg.Server.Services {
 		service := &cfg.Server.Services[i]
 		services[service.Name] = service
+		set := make(map[string]struct{}, len(service.Protocol))
+		for _, p := range service.Protocol {
+			set[p] = struct{}{}
+		}
+		serviceProtocols[service.Name] = set
 	}
 
 	return &Server{
@@ -56,6 +63,7 @@ func NewServer(cfg *config.Config) *Server {
 		ctx:                  ctx,
 		cancel:               cancel,
 		services:             services,
+		serviceProtocols:     serviceProtocols,
 		authenticatedClients: make(map[peer.ID]*ClientSession),
 	}
 }

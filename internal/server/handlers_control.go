@@ -184,63 +184,38 @@ func (s *Server) handleServiceVerificationRequest(handshake *message.Messager, m
 		return
 	}
 
-	var targetService *config.ServiceConfig
-	var serviceExists, protocolSupported bool
-	for i := range s.config.Server.Services {
-		service := &s.config.Server.Services[i]
-		if service.Name == msg.ServiceName {
-			serviceExists = true
-			if !service.Enabled {
-				slog.Warn("Service verification failed: service disabled", "client", clientID, "service", msg.ServiceName)
-				_ = handshake.SendServiceResponse(false, pb.ErrorCode_SERVICE_DISABLED, fmt.Sprintf("Service '%s' is disabled", msg.ServiceName), nil)
-				return
-			}
-			for _, p := range service.Protocol {
-				if p == msg.Protocol {
-					protocolSupported = true
-					targetService = service
-					break
-				}
-			}
-			break
-		}
-	}
-
-	if !serviceExists {
+	service, ok := s.services[msg.ServiceName]
+	if !ok {
 		slog.Warn("Service verification failed: service not found", "client", clientID, "service", msg.ServiceName)
 		_ = handshake.SendServiceResponse(false, pb.ErrorCode_SERVICE_NOT_FOUND, fmt.Sprintf("Service '%s' not found on server", msg.ServiceName), nil)
 		return
 	}
-
-	if !protocolSupported {
-		var supported []string
-		for _, s := range s.config.Server.Services {
-			if s.Name == msg.ServiceName {
-				supported = s.Protocol
-				break
-			}
-		}
-		slog.Warn("Service verification failed: protocol not supported", "client", clientID, "service", msg.ServiceName, "protocol", msg.Protocol, "supported", supported)
-		_ = handshake.SendServiceResponse(false, pb.ErrorCode_PROTOCOL_NOT_SUPPORTED, fmt.Sprintf("Protocol '%s' not supported for service '%s'. Supported protocols: %v", msg.Protocol, msg.ServiceName, supported), nil)
+	if !service.Enabled {
+		slog.Warn("Service verification failed: service disabled", "client", clientID, "service", msg.ServiceName)
+		_ = handshake.SendServiceResponse(false, pb.ErrorCode_SERVICE_DISABLED, fmt.Sprintf("Service '%s' is disabled", msg.ServiceName), nil)
 		return
 	}
-
-	if targetService != nil && targetService.Password != "" {
+	protocolSet := s.serviceProtocols[msg.ServiceName]
+	if _, ok := protocolSet[msg.Protocol]; !ok {
+		slog.Warn("Service verification failed: protocol not supported", "client", clientID, "service", msg.ServiceName, "protocol", msg.Protocol)
+		_ = handshake.SendServiceResponse(false, pb.ErrorCode_PROTOCOL_NOT_SUPPORTED, fmt.Sprintf("Protocol '%s' not supported for service '%s'. Supported protocols: %v", msg.Protocol, msg.ServiceName, service.Protocol), nil)
+		return
+	}
+	if service.Password != "" {
 		if msg.ServicePassword == "" {
 			slog.Warn("Service verification failed: password required", "client", clientID, "service", msg.ServiceName)
 			_ = handshake.SendServiceResponse(false, pb.ErrorCode_PASSWORD_REQUIRED_ERROR, fmt.Sprintf("Password required for service '%s'", msg.ServiceName), nil)
 			return
 		}
-		if msg.ServicePassword != targetService.Password {
+		if msg.ServicePassword != service.Password {
 			slog.Warn("Service verification failed: invalid password", "client", clientID, "service", msg.ServiceName)
 			_ = handshake.SendServiceResponse(false, pb.ErrorCode_INVALID_PASSWORD, fmt.Sprintf("Invalid password for service '%s'", msg.ServiceName), nil)
 			return
 		}
 	}
-
 	willCompress := s.config.Server.Compress
-	if targetService != nil && targetService.Compress != nil {
-		willCompress = *targetService.Compress
+	if service.Compress != nil {
+		willCompress = *service.Compress
 	}
 	data := map[string]string{"zstd": fmt.Sprintf("%v", willCompress)}
 	_ = handshake.SendServiceResponse(true, pb.ErrorCode_NO_ERROR, fmt.Sprintf("Service '%s' verification successful with protocol '%s'", msg.ServiceName, msg.Protocol), data)
@@ -266,61 +241,39 @@ func (s *Server) handleServiceHandshake(messager *message.Messager, requestedSer
 		*requestedProtocol = msg.Protocol
 	}
 
-	var targetService *config.ServiceConfig
-	var serviceExists = false
-	var protocolSupported = false
-	for i := range s.config.Server.Services {
-		svc := &s.config.Server.Services[i]
-		if svc.Name == msg.ServiceName {
-			serviceExists = true
-			if !svc.Enabled {
-				_ = messager.SendServiceResponse(false, pb.ErrorCode_SERVICE_DISABLED, fmt.Sprintf("Service '%s' is disabled", msg.ServiceName), nil)
-				return nil, fmt.Errorf("service '%s' is disabled", msg.ServiceName)
-			}
-			for _, supportedProtocol := range svc.Protocol {
-				if supportedProtocol == msg.Protocol {
-					protocolSupported = true
-					targetService = svc
-					break
-				}
-			}
-			break
-		}
-	}
-	if !serviceExists {
+	service, ok := s.services[msg.ServiceName]
+	if !ok {
 		_ = messager.SendServiceResponse(false, pb.ErrorCode_SERVICE_NOT_FOUND, fmt.Sprintf("Service '%s' not found on server", msg.ServiceName), nil)
 		return nil, fmt.Errorf("service '%s' not found on server", msg.ServiceName)
 	}
-	if !protocolSupported {
-		var supportedProtocols []string
-		for _, service := range s.config.Server.Services {
-			if service.Name == msg.ServiceName {
-				supportedProtocols = service.Protocol
-				break
-			}
-		}
-		_ = messager.SendServiceResponse(false, pb.ErrorCode_PROTOCOL_NOT_SUPPORTED, fmt.Sprintf("Protocol '%s' not supported for service '%s'. Supported protocols: %v", msg.Protocol, msg.ServiceName, supportedProtocols), nil)
-		return nil, fmt.Errorf("protocol '%s' not supported for service '%s'. Supported: %v", msg.Protocol, msg.ServiceName, supportedProtocols)
+	if !service.Enabled {
+		_ = messager.SendServiceResponse(false, pb.ErrorCode_SERVICE_DISABLED, fmt.Sprintf("Service '%s' is disabled", msg.ServiceName), nil)
+		return nil, fmt.Errorf("service '%s' is disabled", msg.ServiceName)
 	}
-	if targetService.Password != "" {
+	protocolSet := s.serviceProtocols[msg.ServiceName]
+	if _, ok := protocolSet[msg.Protocol]; !ok {
+		_ = messager.SendServiceResponse(false, pb.ErrorCode_PROTOCOL_NOT_SUPPORTED, fmt.Sprintf("Protocol '%s' not supported for service '%s'. Supported protocols: %v", msg.Protocol, msg.ServiceName, service.Protocol), nil)
+		return nil, fmt.Errorf("protocol '%s' not supported for service '%s'", msg.Protocol, msg.ServiceName)
+	}
+	if service.Password != "" {
 		if msg.ServicePassword == "" {
 			_ = messager.SendServiceResponse(false, pb.ErrorCode_PASSWORD_REQUIRED_ERROR, fmt.Sprintf("Password required for service '%s'", msg.ServiceName), nil)
 			return nil, fmt.Errorf("password required for service '%s'", msg.ServiceName)
 		}
-		if msg.ServicePassword != targetService.Password {
+		if msg.ServicePassword != service.Password {
 			_ = messager.SendServiceResponse(false, pb.ErrorCode_INVALID_PASSWORD, fmt.Sprintf("Invalid password for service '%s'", msg.ServiceName), nil)
 			return nil, fmt.Errorf("invalid password for service '%s'", msg.ServiceName)
 		}
 	}
 	willCompress := s.config.Server.Compress
-	if targetService != nil && targetService.Compress != nil {
-		willCompress = *targetService.Compress
+	if service.Compress != nil {
+		willCompress = *service.Compress
 	}
 	data := map[string]string{"zstd": fmt.Sprintf("%v", willCompress)}
 	if err := messager.SendServiceResponse(true, pb.ErrorCode_NO_ERROR, fmt.Sprintf("Service '%s' ready with protocol '%s'", msg.ServiceName, msg.Protocol), data); err != nil {
 		return nil, fmt.Errorf("failed to send service response: %v", err)
 	}
-	return targetService, nil
+	return service, nil
 }
 
 // handleAuthOnControl performs server-side password auth on control stream.
