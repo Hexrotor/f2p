@@ -191,8 +191,8 @@ func handleChangePassword(cfg *config.Config, configPath string) error {
 	fmt.Println("Changing server password...")
 
 	if utils.AskYesNo("Do you want to set/update a password? (n to remove password): ") {
-		password := utils.AskPassword("Enter server password: ")
-		confirmPassword := utils.AskPassword("Confirm server password: ")
+		password, _ := utils.AskPassword("Enter server password: ")
+		confirmPassword, _ := utils.AskPassword("Confirm server password: ")
 
 		if password != confirmPassword {
 			return fmt.Errorf("passwords do not match")

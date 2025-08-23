@@ -135,7 +135,10 @@ func (c *Client) authenticateWithServer() error {
 		if has {
 			password = cached
 		} else {
-			password = utils.AskPassword("Enter server password: ")
+			password, err = utils.AskPassword("Enter server password: ")
+			if err != nil {
+				return fmt.Errorf("failed to read password: %v", err)
+			}
 		}
 	}
 	// Step 3: send auth request
