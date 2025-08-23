@@ -13,54 +13,26 @@ import (
 
 // AskPassword reads a password from terminal without echo. It gracefully
 // handles non-TTY environments and Ctrl+C interruptions on Windows/Linux.
-func AskPassword(prompt string) string {
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+func AskPassword(prompt string) (string, error) {
+  sigChan := make(chan os.Signal, 1)
+  signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+  defer signal.Stop(sigChan)
 
-	fd := int(syscall.Stdin)
+  go func() {
+    <-sigChan
+    fmt.Println("\n\nOperation cancelled")
+    os.Exit(1)
+  }()
 
-	oldState, err := term.GetState(fd)
-	if err != nil {
-		// Fallback when terminal state cannot be obtained (e.g., non-TTY)
-		fmt.Print(prompt)
-		var password string
-		fmt.Scanln(&password)
-		return password
-	}
-
-	done := make(chan bool, 1)
-	var password string
-	var readErr error
-
-	go func() {
-		defer func() {
-			term.Restore(fd, oldState)
-			done <- true
-		}()
-
-		fmt.Print(prompt)
-		var passwordBytes []byte
-		passwordBytes, readErr = term.ReadPassword(fd)
-		fmt.Println()
-
-		if readErr == nil {
-			password = string(passwordBytes)
-		}
-	}()
-
-	select {
-	case <-done:
-		if readErr != nil {
-			fmt.Fprintf(os.Stderr, "Error reading password: %v\n", readErr)
-			return ""
-		}
-		return password
-	case <-sigChan:
-		fmt.Println("\n\nOperation cancelled by user")
-		term.Restore(fd, oldState)
-		os.Exit(1)
-		return ""
-	}
+  fmt.Print(prompt)
+  fd := int(os.Stdin.Fd())
+  
+  bytePwd, err := term.ReadPassword(fd)
+  fmt.Println()
+  if err != nil {
+    return "", err
+  }
+  return string(bytePwd), nil
 }
 
 // AskYesNoWithCancel behaves like AskYesNo but terminates the program on Ctrl+C.

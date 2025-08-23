@@ -413,8 +413,14 @@ func GenerateInteractiveConfig(configPath string) error {
 	if isServer {
 		var serverPassword string
 		if utils.AskYesNo("Do you want to set a password for authentication? (y/n): ") {
-			password := utils.AskPassword("Enter password: ")
-			confirmPassword := utils.AskPassword("Confirm password: ")
+			password, err := utils.AskPassword("Enter password: ")
+			if err != nil {
+				return fmt.Errorf("failed to read password: %v", err)
+			}
+			confirmPassword, err := utils.AskPassword("Confirm password: ")
+			if err != nil {
+				return fmt.Errorf("failed to read password: %v", err)
+			}
 
 			if password != confirmPassword {
 				return fmt.Errorf("passwords do not match")
