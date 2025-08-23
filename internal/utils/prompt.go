@@ -14,25 +14,29 @@ import (
 // AskPassword reads a password from terminal without echo. It gracefully
 // handles non-TTY environments and Ctrl+C interruptions on Windows/Linux.
 func AskPassword(prompt string) (string, error) {
-  sigChan := make(chan os.Signal, 1)
-  signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-  defer signal.Stop(sigChan)
+	termState, err := term.GetState(int(os.Stdin.Fd()))
+	if err != nil {
+		return "", fmt.Errorf("failed to get terminal state: %v", err)
+	}
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sigChan)
 
-  go func() {
-    <-sigChan
-    fmt.Println("\n\nOperation cancelled")
-    os.Exit(1)
-  }()
+	go func() {
+		<-sigChan
+		fmt.Println("\n\nPassword input cancelled")
+		term.Restore(int(os.Stdin.Fd()), termState)
+		os.Exit(1)
+	}()
 
-  fmt.Print(prompt)
-  fd := int(os.Stdin.Fd())
-  
-  bytePwd, err := term.ReadPassword(fd)
-  fmt.Println()
-  if err != nil {
-    return "", err
-  }
-  return string(bytePwd), nil
+	fmt.Print(prompt)
+	fd := int(os.Stdin.Fd())
+	bytePwd, err := term.ReadPassword(fd)
+	fmt.Println()
+	if err != nil {
+		return "", err
+	}
+	return string(bytePwd), nil
 }
 
 // AskYesNoWithCancel behaves like AskYesNo but terminates the program on Ctrl+C.
