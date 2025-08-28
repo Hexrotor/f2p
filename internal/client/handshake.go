@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -137,6 +138,12 @@ func (c *Client) authenticateWithServer() error {
 		} else {
 			password, err = utils.AskPassword("Enter server password: ")
 			if err != nil {
+				if errors.Is(err, utils.ErrPasswordInterrupted) {
+					// user cancelled: proactively notify server so it can stop waiting auth
+					_ = m.SendClientShutdownNotification()
+					slog.Debug("Sent client shutdown notification")
+					return err
+				}
 				return fmt.Errorf("failed to read password: %v", err)
 			}
 		}

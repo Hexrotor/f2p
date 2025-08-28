@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -137,6 +138,7 @@ func runClient(cfg *config.Config) error {
 	signal.Notify(sigc, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-sigc
+		c.SetShutdownReason("user interrupt (Ctrl+C)")
 		_ = c.Stop()
 	}()
 
@@ -191,13 +193,25 @@ func handleChangePassword(cfg *config.Config, configPath string) error {
 	fmt.Println("Changing server password...")
 
 	if utils.AskYesNo("Do you want to set/update a password? (n to remove password): ") {
-		password, _ := utils.AskPassword("Enter server password: ")
-		confirmPassword, _ := utils.AskPassword("Confirm server password: ")
-
+		password, err := utils.AskPassword("Enter server password: ")
+		if err != nil {
+			if errors.Is(err, utils.ErrPasswordInterrupted) {
+				fmt.Println("Password change cancelled.")
+				return nil
+			}
+			return fmt.Errorf("failed to read password: %w", err)
+		}
+		confirmPassword, err := utils.AskPassword("Confirm server password: ")
+		if err != nil {
+			if errors.Is(err, utils.ErrPasswordInterrupted) {
+				fmt.Println("Password change cancelled.")
+				return nil
+			}
+			return fmt.Errorf("failed to read password confirmation: %w", err)
+		}
 		if password != confirmPassword {
 			return fmt.Errorf("passwords do not match")
 		}
-
 		cfg.Server.PasswordHash = config.HashPassword(password)
 		fmt.Println("Password updated successfully")
 	} else {

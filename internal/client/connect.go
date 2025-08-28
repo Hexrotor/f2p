@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -9,8 +10,8 @@ import (
 	"github.com/Hexrotor/f2p/internal/message"
 	"github.com/Hexrotor/f2p/internal/utils"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/libp2p/go-libp2p/core/peerstore"
 	"github.com/libp2p/go-libp2p/core/protocol"
+	"github.com/libp2p/go-libp2p/p2p/net/swarm"
 )
 
 func (c *Client) connectToServer(peerID peer.ID) error {
@@ -20,11 +21,20 @@ func (c *Client) connectToServer(peerID peer.ID) error {
 		slog.Error("DHT find peer failed", "server_id", peerID.ShortString(), "error", err)
 		return err
 	}
-	c.host.Peerstore().AddAddrs(peerID, peerInfo.Addrs, peerstore.TempAddrTTL)
-	slog.Info("Peerstore", "peerID", peerID.ShortString(), "addresses", c.host.Peerstore().Addrs(peerID))
 
-	connCtx, cancel := context.WithTimeout(c.ctx, 60*time.Second)
+	slog.Info("FindPeer", "peer_id", peerID.ShortString(), "addresses", peerInfo.Addrs)
+
+	connCtx, cancel := context.WithTimeout(c.ctx, 20*time.Second)
 	defer cancel()
+
+	if swrm, ok := c.host.Network().(*swarm.Swarm); ok {
+		swrm.Backoff().Clear(peerID)
+	}
+
+	err = c.host.Connect(connCtx, peerInfo)
+	if err != nil {
+		return fmt.Errorf("failed to connect to server: %v", err)
+	}
 
 	controlProto := protocol.ID(utils.ControlProtocol(c.config.Common.Protocol))
 	controlStream, err := c.host.NewStream(connCtx, peerID, controlProto)
@@ -44,11 +54,17 @@ func (c *Client) connectToServer(peerID peer.ID) error {
 	c.streamMutex.Unlock()
 
 	if err := c.authenticateWithServer(); err != nil {
+		if errors.Is(err, utils.ErrPasswordInterrupted) {
+			c.setShutdownReason("user interrupt (password input)")
+			c.cancel()
+			return fmt.Errorf("authentication cancelled")
+		}
 		controlStream.Close()
 		return fmt.Errorf("authentication failed: %v", err)
 	}
 	if err := c.verifyServiceConfiguration(); err != nil {
 		controlStream.Close()
+		c.setShutdownReason("service verification failed (configuration error)")
 		fmt.Printf("Service verification failed - this should be your configuration issue!\nPlease check your client configuration and ensure services exist on server.\n")
 		c.cancel()
 		return fmt.Errorf("service verification failed: %v", err)
