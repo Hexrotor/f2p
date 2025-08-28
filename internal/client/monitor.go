@@ -14,6 +14,10 @@ import (
 func (c *Client) monitorControlStream() {
 	serverShutdownReceived := false
 	defer func() {
+		if c.stopping.Load() {
+			// intentional stop; suppress reconnection
+			return
+		}
 		if serverShutdownReceived {
 			slog.Info("Control stream disconnected due to server shutdown, waiting 10s before reconnecting")
 			time.Sleep(10 * time.Second)
@@ -32,7 +36,8 @@ func (c *Client) monitorControlStream() {
 	}
 
 	lastHeartbeat := time.Now()
-	heartbeatTimeout := 70 * time.Second
+	// Expect server ping every 10s; treat >25s silence as failure (includes some margin)
+	heartbeatTimeout := 25 * time.Second
 	for {
 		select {
 		case <-c.ctx.Done():

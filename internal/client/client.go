@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Hexrotor/f2p/internal/config"
@@ -55,6 +56,7 @@ type Client struct {
 	// unified shutdown reason
 	shutdownMu     sync.Mutex
 	shutdownReason string
+	stopping       atomic.Bool
 }
 
 func NewClient(cfg *config.Config) *Client {
@@ -220,9 +222,13 @@ func (c *Client) Stop() error {
 	controlStream := c.controlStream
 	c.streamMutex.RUnlock()
 
+	c.stopping.Store(true)
+
 	if controlStream != nil {
 		if c.controlMessager != nil {
 			_ = c.controlMessager.SendClientShutdownNotification()
+			// small delay to allow message flush across multiplex/encryption layers
+			time.Sleep(1 * time.Second)
 		}
 		controlStream.Close()
 	}

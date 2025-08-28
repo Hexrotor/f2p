@@ -96,11 +96,13 @@ func (s *Server) monitorControlStream(clientSession *ClientSession) {
 
 	messager := clientSession.controlMessager
 
-	heartbeatInterval := 30 * time.Second
+	// Shorter heartbeat interval for faster dead peer detection
+	heartbeatInterval := 10 * time.Second
 	heartbeatTicker := time.NewTicker(heartbeatInterval)
 	defer heartbeatTicker.Stop()
 
 	missed := 0
+	// Allow up to 2 missed acks => ~20s worst-case extra detection latency
 	const maxMissed = 2
 
 	waitingAck := false
@@ -119,7 +121,8 @@ func (s *Server) monitorControlStream(clientSession *ClientSession) {
 				time.Sleep(100 * time.Millisecond)
 				continue
 			}
-			ctx, cancel := context.WithTimeout(s.ctx, 5*time.Second)
+			// Tighter wait timeout to accelerate heartbeat failure detection
+			ctx, cancel := context.WithTimeout(s.ctx, 3*time.Second)
 			var msg *pb.UnifiedMessage
 			var err error
 			if waitingAck {
