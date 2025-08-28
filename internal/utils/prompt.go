@@ -2,6 +2,7 @@ package utils
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -11,32 +12,50 @@ import (
 	"golang.org/x/term"
 )
 
-// AskPassword reads a password from terminal without echo. It gracefully
-// handles non-TTY environments and Ctrl+C interruptions on Windows/Linux.
+// ErrPasswordInterrupted returned when password input is interrupted by signal.
+var ErrPasswordInterrupted = errors.New("password input interrupted")
+
+// AskPassword read password with no echo
 func AskPassword(prompt string) (string, error) {
-	termState, err := term.GetState(int(os.Stdin.Fd()))
-	if err != nil {
-		return "", fmt.Errorf("failed to get terminal state: %v", err)
+	fd := int(os.Stdin.Fd())
+	if !term.IsTerminal(fd) {
+		fmt.Print(prompt)
+		reader := bufio.NewReader(os.Stdin)
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			return "", err
+		}
+		return strings.TrimSpace(line), nil
 	}
+
+	oldState, _ := term.GetState(fd)
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(sigChan)
 
-	go func() {
-		<-sigChan
-		fmt.Println("\n\nPassword input cancelled")
-		term.Restore(int(os.Stdin.Fd()), termState)
-		os.Exit(1)
-	}()
+	type result struct {
+		pwd []byte
+		err error
+	}
+	resCh := make(chan result, 1)
 
 	fmt.Print(prompt)
-	fd := int(os.Stdin.Fd())
-	bytePwd, err := term.ReadPassword(fd)
-	fmt.Println()
-	if err != nil {
-		return "", err
+	go func() { b, e := term.ReadPassword(fd); resCh <- result{b, e} }()
+
+	select {
+	case r := <-resCh:
+		fmt.Println()
+		if r.err != nil {
+			return "", r.err
+		}
+		return string(r.pwd), nil
+	case <-sigChan:
+		if oldState != nil {
+			_ = term.Restore(fd, oldState)
+		}
+		fmt.Println()
+		return "", ErrPasswordInterrupted
 	}
-	return string(bytePwd), nil
 }
 
 // AskYesNoWithCancel behaves like AskYesNo but terminates the program on Ctrl+C.

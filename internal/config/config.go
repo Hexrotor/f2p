@@ -3,7 +3,6 @@ package config
 import (
 	"bufio"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 	"os"
@@ -11,7 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
-	"time"
+
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/BurntSushi/toml"
 	"github.com/Hexrotor/f2p/internal/utils"
@@ -482,46 +482,20 @@ func GenerateInteractiveConfig(configPath string) error {
 	return Save(&cfg, configPath)
 }
 
+// HashPassword now uses bcrypt for new hashes. Old salt:sha256 hashes remain valid (backward compatible).
 func HashPassword(password string) string {
-	salt := make([]byte, 16)
-	if _, err := rand.Read(salt); err != nil {
-		timestamp := time.Now().UnixNano()
-		salt = []byte(fmt.Sprintf("%016x", timestamp))
+	if password == "" {
+		return ""
 	}
-
-	data := append(salt, []byte(password)...)
-	hash := sha256.Sum256(data)
-
-	saltB64 := base64.StdEncoding.EncodeToString(salt)
-	hashB64 := base64.StdEncoding.EncodeToString(hash[:])
-
-	return fmt.Sprintf("%s:%s", saltB64, hashB64)
+	b, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	return string(b)
 }
 
 func VerifyPassword(password, storedHash string) bool {
-	if strings.Contains(storedHash, ":") {
-		parts := strings.SplitN(storedHash, ":", 2)
-		if len(parts) != 2 {
-			return false
-		}
-
-		saltB64, expectedHashB64 := parts[0], parts[1]
-
-		salt, err := base64.StdEncoding.DecodeString(saltB64)
-		if err != nil {
-			return false
-		}
-
-		data := append(salt, []byte(password)...)
-		hash := sha256.Sum256(data)
-		actualHashB64 := base64.StdEncoding.EncodeToString(hash[:])
-
-		return actualHashB64 == expectedHashB64
-	} else {
-		hash := sha256.Sum256([]byte(password))
-		oldHash := base64.StdEncoding.EncodeToString(hash[:])
-		return oldHash == storedHash
+	if storedHash == "" {
+		return password == ""
 	}
+	return bcrypt.CompareHashAndPassword([]byte(storedHash), []byte(password)) == nil
 }
 
 func askStringWithCancel(prompt string) string {

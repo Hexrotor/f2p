@@ -25,8 +25,7 @@ func (s *Server) handleControlStream(stream network.Stream) {
 	if !exists {
 		if err := s.handleAuthenticationStream(stream); err != nil {
 			slog.Warn("Authentication failed", "client", remotePeer.String(), "error", err)
-			time.Sleep(1 * time.Second)
-			_ = stream.Reset()
+			s.host.Network().ClosePeer(remotePeer)
 		}
 		return
 	}
@@ -92,6 +91,7 @@ func (s *Server) monitorControlStream(clientSession *ClientSession) {
 		if clientSession.controlDispatcher != nil {
 			clientSession.controlDispatcher.Close()
 		}
+		s.host.Network().ClosePeer(clientSession.peerID)
 	}()
 
 	messager := clientSession.controlMessager

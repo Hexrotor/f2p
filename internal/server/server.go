@@ -18,6 +18,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
+	"github.com/libp2p/go-libp2p/p2p/host/autorelay"
 	"github.com/multiformats/go-multiaddr"
 )
 
@@ -112,7 +113,12 @@ func (s *Server) Start() error {
 		libp2p.EnableHolePunching(),
 		libp2p.EnableNATService(),
 		libp2p.NATPortMap(),
-		libp2p.EnableAutoRelayWithPeerSource(s.createAutoRelayPeerSource()),
+		libp2p.EnableAutoRelayWithPeerSource(
+			s.createAutoRelayPeerSource(),
+			autorelay.WithMaxCandidateAge(time.Minute*30),
+			autorelay.WithMinInterval(time.Minute*15),
+			autorelay.WithNumRelays(3),
+		),
 		libp2p.UserAgent(utils.GetUserAgent()),
 	}
 

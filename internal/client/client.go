@@ -51,6 +51,10 @@ type Client struct {
 	authMu                  sync.RWMutex
 	cachedServerPassword    string
 	hasCachedServerPassword bool
+
+	// unified shutdown reason
+	shutdownMu     sync.Mutex
+	shutdownReason string
 }
 
 func NewClient(cfg *config.Config) *Client {
@@ -169,12 +173,16 @@ func (c *Client) startConnectionManager() {
 	for {
 		select {
 		case <-c.ctx.Done():
+			c.shutdownMu.Lock()
+			if c.shutdownReason == "" {
+				c.shutdownReason = "context cancelled"
+			}
+			c.shutdownMu.Unlock()
 			return
 		default:
 			if err := c.connectToServer(c.serverPeerID); err != nil {
 				select {
 				case <-c.ctx.Done():
-					fmt.Println("Client stopping due to configuration issues...")
 					return
 				default:
 				}
@@ -198,8 +206,15 @@ func (c *Client) startConnectionManager() {
 }
 
 func (c *Client) Stop() error {
-	slog.Info("Stopping client")
-	fmt.Println("Stopping client...")
+	c.shutdownMu.Lock()
+	reason := c.shutdownReason
+	c.shutdownMu.Unlock()
+
+	if reason == "" {
+		reason = "user requested stop"
+	}
+	fmt.Println()
+	slog.Info("Stopping client", "reason", reason)
 
 	c.streamMutex.RLock()
 	controlStream := c.controlStream
@@ -255,6 +270,18 @@ func (c *Client) IncreaseBackoff() {
 func (c *Client) Wait() {
 	<-c.ctx.Done()
 }
+
+// setShutdownReason sets reason only once (first wins)
+func (c *Client) setShutdownReason(r string) {
+	c.shutdownMu.Lock()
+	if c.shutdownReason == "" {
+		c.shutdownReason = r
+	}
+	c.shutdownMu.Unlock()
+}
+
+// SetShutdownReason allows external packages (main) to assign a user-friendly exit reason.
+func (c *Client) SetShutdownReason(r string) { c.setShutdownReason(r) }
 
 func (c *Client) generateClientKey() (crypto.PrivKey, error) {
 	if c.config.Identity.PrivateKey != "" {
