@@ -138,7 +138,7 @@ func (s *Server) monitorControlStream(clientSession *ClientSession) {
 						missed++
 						slog.Warn("Heartbeat ack timeout", "client", clientSession.peerID.ShortString(), "missed", missed)
 						waitingAck = false
-						if missed > maxMissed {
+						if missed >= maxMissed {
 							slog.Error("Too many missed heartbeat acks, closing session", "client", clientSession.peerID.ShortString())
 							return
 						}
