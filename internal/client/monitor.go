@@ -51,6 +51,7 @@ func (c *Client) monitorControlStream() {
 				if cs != nil {
 					_ = cs.Close()
 				}
+				c.host.Network().ClosePeer(c.serverPeerID)
 				return
 			}
 			c.streamMutex.RLock()
