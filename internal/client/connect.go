@@ -56,6 +56,8 @@ func (c *Client) connectToServer(peerID peer.ID) error {
 	if err := c.authenticateWithServer(); err != nil {
 		if errors.Is(err, utils.ErrPasswordInterrupted) {
 			c.setShutdownReason("user interrupt (password input)")
+			// allow shutdown message to flush
+			time.Sleep(1 * time.Second)
 			c.cancel()
 			return fmt.Errorf("authentication cancelled")
 		}
