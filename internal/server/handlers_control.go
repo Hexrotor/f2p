@@ -16,7 +16,7 @@ import (
 
 func (s *Server) handleControlStream(stream network.Stream) {
 	remotePeer := stream.Conn().RemotePeer()
-	slog.Info("New control stream", "client", remotePeer.String())
+	slog.Info("New control stream", "client", remotePeer.String(), "addr", stream.Conn().RemoteMultiaddr())
 
 	s.clientsMutex.RLock()
 	_, exists := s.authenticatedClients[remotePeer]
@@ -139,7 +139,7 @@ func (s *Server) monitorControlStream(clientSession *ClientSession) {
 						slog.Warn("Heartbeat ack timeout", "client", clientSession.peerID.ShortString(), "missed", missed)
 						waitingAck = false
 						if missed >= maxMissed {
-							slog.Error("Too many missed heartbeat acks, closing session", "client", clientSession.peerID.ShortString())
+							slog.Warn("Too many missed heartbeat acks, closing session", "client", clientSession.peerID.ShortString())
 							return
 						}
 					}
