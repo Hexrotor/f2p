@@ -335,7 +335,7 @@ func writeTomlHeader(content *strings.Builder, isServer bool) {
 
 func createDefaultCommonConfig() CommonConfig {
 	return CommonConfig{
-		Protocol: "/f2p-forward/0.0.1",
+		Protocol: utils.GetProtocol(),
 		Listen: []string{
 			"/ip4/0.0.0.0/tcp/0",
 			"/ip6/::/tcp/0",
