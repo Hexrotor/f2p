@@ -192,7 +192,7 @@ func handleChangePassword(cfg *config.Config, configPath string) error {
 
 	fmt.Println("Changing server password...")
 
-	if utils.AskYesNo("Do you want to set/update a password? (n to remove password): ") {
+	if utils.AskYesNo("Do you want to set/update a password? (y/n, n to remove password, Ctrl+c to exit): ") {
 		password, err := utils.AskPassword("Enter server password: ")
 		if err != nil {
 			if errors.Is(err, utils.ErrPasswordInterrupted) {
