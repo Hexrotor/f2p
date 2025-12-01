@@ -2,7 +2,7 @@ package utils
 
 const (
 	appName = "f2p"
-	version = "0.0.2"
+	version = "0.0.3"
 	protocol = "f2p-forward/0.0.2"
 )
 
