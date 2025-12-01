@@ -62,12 +62,14 @@ Examples:
 
 ## 配置文件
 
-程序启动时会检查配置文件，默认为当前目录下的 `config.toml`。若配置文件不存在，会启动交互式创建流程；请由程序创建后再编辑 `services` 部分。
+程序启动时会检查配置文件。若配置文件不存在，会启动交互式创建流程。**请直接修改程序生成的配置文件，勿从此页复制。**
 
 ### 配置文件示例与说明
 
+服务器:
+
 ```toml
-is_server = true
+is_server = true          # 指示程序作为服务器还是客户端运行
 
 [identity]
 private_key = "..."
@@ -91,6 +93,25 @@ protocol = ["tcp", "udp"] # 支持多协议
 compress = false          # 单服务压缩选项可覆盖
 enabled = false
 
+[common]
+protocol = "/f2p-forward/0.0.2" # libp2p 提供的协议功能，用于区分服务。确保服务器与客户端保持一致。
+# libp2p multiaddr 监听地址，按需改动，端口 0 表示随机
+listen = ["/ip4/0.0.0.0/tcp/0", "/ip6/::/tcp/0", "/ip4/0.0.0.0/udp/0/webrtc-direct", "/ip4/0.0.0.0/udp/0/quic-v1", "/ip4/0.0.0.0/udp/0/quic-v1/webtransport", "/ip6/::/udp/0/webrtc-direct", "/ip6/::/udp/0/quic-v1", "/ip6/::/udp/0/quic-v1/webtransport"]
+log_level = "info"
+zstd_level = 20           # zstd 压缩等级 1-20，越大压缩率越高，但 CPU 消耗也越多，后续可能会考虑调整默认值
+zstd_min_size_b = 256     # 压缩开启阈值，默认 256 字节
+zstd_chunk_size_kb = 32   # 压缩分块大小
+```
+
+客户端:
+
+```toml
+is_server = false
+
+[identity]
+private_key = "..."
+peer_id = "..."
+
 [client]                  # 客户端配置
 server_id = "..."         # 服务器 PeerID，交互式生成配置时填写
 
@@ -108,7 +129,7 @@ password = "123"
 enabled = false
 
 [common]
-protocol = "/f2p-forward/0.0.1" # libp2p 提供的协议功能，用于区分服务。确保服务器与客户端保持一致。
+protocol = "/f2p-forward/0.0.2" # libp2p 提供的协议功能，用于区分服务。确保服务器与客户端保持一致。
 # libp2p multiaddr 监听地址，按需改动，端口 0 表示随机
 listen = ["/ip4/0.0.0.0/tcp/0", "/ip6/::/tcp/0", "/ip4/0.0.0.0/udp/0/webrtc-direct", "/ip4/0.0.0.0/udp/0/quic-v1", "/ip4/0.0.0.0/udp/0/quic-v1/webtransport", "/ip6/::/udp/0/webrtc-direct", "/ip6/::/udp/0/quic-v1", "/ip6/::/udp/0/quic-v1/webtransport"]
 log_level = "info"
