@@ -19,6 +19,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/libp2p/go-libp2p/p2p/host/autorelay"
+	"github.com/libp2p/go-libp2p/p2p/protocol/holepunch"
 	"github.com/multiformats/go-multiaddr"
 )
 
@@ -105,12 +106,19 @@ func (s *Server) Start() error {
 		listenAddrs = append(listenAddrs, addr)
 	}
 
+	// Build hole punch options: always enable v2 (ObservedAddr-based),
+	// optionally add STUN servers for more precise NAT sub-type detection.
+	hpOpts := []holepunch.Option{holepunch.EnableV2()}
+	if len(s.config.Common.StunServers) >= 2 {
+		hpOpts = []holepunch.Option{holepunch.WithSTUNServers(s.config.Common.StunServers)}
+	}
+
 	opts := []libp2p.Option{
 		libp2p.Identity(privKey),
 		libp2p.ListenAddrs(listenAddrs...),
 		libp2p.EnableRelay(),
 		libp2p.EnableAutoNATv2(),
-		libp2p.EnableHolePunching(),
+		libp2p.EnableHolePunching(hpOpts...),
 		libp2p.EnableNATService(),
 		libp2p.NATPortMap(),
 		libp2p.EnableAutoRelayWithPeerSource(
