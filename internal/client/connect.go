@@ -19,6 +19,14 @@ import (
 	"github.com/libp2p/go-libp2p/p2p/net/swarm"
 )
 
+const (
+	// Time to wait for libp2p's DCUtR to upgrade relay to direct connection.
+	dcutrWaitTimeout = 15 * time.Second
+	// Max hole punch attempts before giving up and returning to outer retry loop
+	// (which re-does DHT find + connect from scratch).
+	maxHolePunchAttempts = 3
+)
+
 func (c *Client) connectToServer(peerID peer.ID) error {
 	slog.Info("Querying", "server_id", peerID.ShortString())
 	peerInfo, err := c.dht.FindPeer(c.ctx, peerID)
@@ -45,24 +53,31 @@ func (c *Client) connectToServer(peerID peer.ID) error {
 
 	// Check if connection is relay-only (Limited).
 	// libp2p typically connects via relay first, then DCUtR upgrades to direct.
-	// Wait a few seconds for DCUtR before falling back to custom hole punching.
+	// Wait for DCUtR before falling back to custom hole punching.
 	isRelay := c.isRelayConnection(peerID)
 	if isRelay {
 		slog.Info("Connection is relay-only, waiting for libp2p direct connection upgrade...")
-		if c.waitForDirectConnection(peerID, 8*time.Second) {
+		if c.waitForDirectConnection(peerID, dcutrWaitTimeout) {
 			slog.Info("Direct connection established via libp2p DCUtR")
 			protoCtx, protoCancel := context.WithTimeout(c.ctx, 10*time.Second)
 			defer protoCancel()
 			return c.setupLibp2pProtocol(protoCtx, peerID)
 		}
 
-		slog.Info("Still relay-only after waiting, attempting custom hole punch")
-		if err := c.attemptHolePunch(peerID); err != nil {
-			slog.Warn("Hole punch failed", "error", err)
-			return fmt.Errorf("hole punch failed (relay insufficient for sustained operation): %w", err)
+		// DCUtR failed, attempt custom hole punch with retries.
+		// Each retry reuses the existing relay connection for signaling.
+		var lastErr error
+		for attempt := 1; attempt <= maxHolePunchAttempts; attempt++ {
+			slog.Info("Attempting custom hole punch", "attempt", attempt, "max", maxHolePunchAttempts)
+			if err := c.attemptHolePunch(peerID); err != nil {
+				slog.Warn("Hole punch attempt failed", "attempt", attempt, "error", err)
+				lastErr = err
+				continue
+			}
+			// Hole punch succeeded → use QUIC for everything
+			return c.setupQUICProtocol(peerID)
 		}
-		// Hole punch succeeded → use QUIC for everything
-		return c.setupQUICProtocol(peerID)
+		return fmt.Errorf("hole punch failed after %d attempts: %w", maxHolePunchAttempts, lastErr)
 	}
 
 	slog.Info("Direct connection established, using libp2p protocol")
