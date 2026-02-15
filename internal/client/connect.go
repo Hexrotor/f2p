@@ -43,10 +43,20 @@ func (c *Client) connectToServer(peerID peer.ID) error {
 
 	c.ResetBackoff()
 
-	// Check if connection is relay-only (Limited)
+	// Check if connection is relay-only (Limited).
+	// libp2p typically connects via relay first, then DCUtR upgrades to direct.
+	// Wait a few seconds for DCUtR before falling back to custom hole punching.
 	isRelay := c.isRelayConnection(peerID)
 	if isRelay {
-		slog.Info("Connection is relay-only, attempting hole punch for direct connection")
+		slog.Info("Connection is relay-only, waiting for libp2p direct connection upgrade...")
+		if c.waitForDirectConnection(peerID, 8*time.Second) {
+			slog.Info("Direct connection established via libp2p DCUtR")
+			protoCtx, protoCancel := context.WithTimeout(c.ctx, 10*time.Second)
+			defer protoCancel()
+			return c.setupLibp2pProtocol(protoCtx, peerID)
+		}
+
+		slog.Info("Still relay-only after waiting, attempting custom hole punch")
 		if err := c.attemptHolePunch(peerID); err != nil {
 			slog.Warn("Hole punch failed", "error", err)
 			return fmt.Errorf("hole punch failed (relay insufficient for sustained operation): %w", err)
@@ -72,6 +82,23 @@ func (c *Client) isRelayConnection(peerID peer.ID) bool {
 		}
 	}
 	return true
+}
+
+// waitForDirectConnection polls for a non-relay connection to appear,
+// giving libp2p's DCUtR time to upgrade the relay connection to direct.
+func (c *Client) waitForDirectConnection(peerID peer.ID, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		select {
+		case <-time.After(500 * time.Millisecond):
+			if !c.isRelayConnection(peerID) {
+				return true
+			}
+		case <-c.ctx.Done():
+			return false
+		}
+	}
+	return false
 }
 
 // attemptHolePunch performs NAT detection, signaling, and UDP hole punching.
