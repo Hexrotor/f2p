@@ -28,6 +28,10 @@ const (
 )
 
 func (c *Client) connectToServer(peerID peer.ID) error {
+	// Clean up all stale connection state from a previous cycle,
+	// so openDataStream and monitorControlStream don't use dead connections.
+	c.cleanupPreviousConnection()
+
 	slog.Info("Querying", "server_id", peerID.ShortString())
 	peerInfo, err := c.dht.FindPeer(c.ctx, peerID)
 	if err != nil {

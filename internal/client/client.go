@@ -286,12 +286,7 @@ func (c *Client) Stop() error {
 	c.cancel()
 
 	// Close direct QUIC connection if active
-	c.directMu.RLock()
-	dc := c.directConn
-	c.directMu.RUnlock()
-	if dc != nil {
-		dc.CloseWithError(0, "client shutdown")
-	}
+	c.cleanupDirectConn("client shutdown")
 
 	if c.dht != nil {
 		c.dht.Close()

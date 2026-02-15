@@ -96,6 +96,7 @@ func (c *Client) monitorControlStream() {
 }
 
 // closeControlStream closes whichever control stream is active (libp2p or QUIC).
+// Called by monitorControlStream when a disconnection is detected.
 func (c *Client) closeControlStream() {
 	c.streamMutex.RLock()
 	cs := c.controlStream
@@ -109,13 +110,64 @@ func (c *Client) closeControlStream() {
 		_ = qc.Close()
 	}
 
-	// Also close the QUIC connection if in direct mode
-	c.directMu.RLock()
-	dc := c.directConn
-	c.directMu.RUnlock()
-	if dc != nil {
-		dc.CloseWithError(0, "control stream closed")
+	// Close and nil out the QUIC connection if in direct mode
+	if c.cleanupDirectConn("control stream closed") {
+		// was direct QUIC, already cleaned up
 	} else {
 		c.host.Network().ClosePeer(c.serverPeerID)
 	}
+}
+
+// cleanupPreviousConnection comprehensively clears ALL stale connection state
+// (both libp2p and QUIC) at the start of a new connection cycle. This ensures
+// openDataStream, monitorControlStream, etc. don't use dead connections.
+func (c *Client) cleanupPreviousConnection() {
+	// 1. Close dispatcher first (stops reading from control stream)
+	c.streamMutex.Lock()
+	if c.controlDispatcher != nil {
+		c.controlDispatcher.Close()
+		c.controlDispatcher = nil
+	}
+	c.controlMessager = nil
+
+	// 2. Close libp2p control stream
+	cs := c.controlStream
+	c.controlStream = nil
+
+	// 3. Close QUIC control stream closer
+	qc := c.quicCtrlClose
+	c.quicCtrlClose = nil
+	c.streamMutex.Unlock()
+
+	if cs != nil {
+		_ = cs.Close()
+	}
+	if qc != nil {
+		_ = qc.Close()
+	}
+
+	// 4. Close and nil out direct QUIC connection
+	c.cleanupDirectConn("new connection cycle")
+
+	// 5. Close any stale libp2p peer connections
+	c.host.Network().ClosePeer(c.serverPeerID)
+
+	slog.Debug("Cleaned up previous connection state")
+}
+
+// cleanupDirectConn closes the direct QUIC connection (if any) and nils it out
+// so that openDataStream falls back to libp2p on the next connection cycle.
+// Returns true if a QUIC connection was cleaned up.
+func (c *Client) cleanupDirectConn(reason string) bool {
+	c.directMu.Lock()
+	dc := c.directConn
+	c.directConn = nil
+	c.directMu.Unlock()
+
+	if dc != nil {
+		dc.CloseWithError(0, reason)
+		slog.Debug("Cleaned up stale direct QUIC connection", "reason", reason)
+		return true
+	}
+	return false
 }
