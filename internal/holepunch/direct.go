@@ -75,6 +75,10 @@ var defaultQUICConfig = &quic.Config{
 
 // DirectDialQUIC establishes a QUIC connection through a punched socket and authenticates.
 func DirectDialQUIC(ctx context.Context, punched *PunchedSocket, sessionToken []byte) (*quic.Conn, error) {
+	// Clear stale deadlines left over from the punch phase,
+	// otherwise QUIC writes/reads fail immediately with i/o timeout.
+	punched.Conn.SetDeadline(time.Time{})
+
 	tr := &quic.Transport{Conn: punched.Conn}
 
 	dialCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
@@ -118,6 +122,9 @@ func DirectDialQUIC(ctx context.Context, punched *PunchedSocket, sessionToken []
 // DirectListenQUIC starts a QUIC listener on the punched socket.
 // Returns the transport and listener. Caller is responsible for closing them.
 func DirectListenQUIC(punched *PunchedSocket) (*quic.Transport, *quic.Listener, error) {
+	// Clear stale deadlines left over from the punch phase.
+	punched.Conn.SetDeadline(time.Time{})
+
 	tlsConf, err := generateSelfSignedTLS()
 	if err != nil {
 		return nil, nil, fmt.Errorf("generate TLS: %w", err)
