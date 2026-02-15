@@ -4,11 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"net"
+	"strings"
 	"time"
 
+	"github.com/Hexrotor/f2p/internal/holepunch"
 	"github.com/Hexrotor/f2p/internal/message"
 	"github.com/Hexrotor/f2p/internal/utils"
+	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/libp2p/go-libp2p/p2p/net/swarm"
@@ -36,13 +41,168 @@ func (c *Client) connectToServer(peerID peer.ID) error {
 		return fmt.Errorf("failed to connect to server: %v", err)
 	}
 
+	c.ResetBackoff()
+
+	// Check if connection is relay-only (Limited)
+	isRelay := c.isRelayConnection(peerID)
+	if isRelay {
+		slog.Info("Connection is relay-only, attempting hole punch for direct connection")
+		if err := c.attemptHolePunch(peerID); err != nil {
+			slog.Warn("Hole punch failed", "error", err)
+			return fmt.Errorf("hole punch failed (relay insufficient for sustained operation): %w", err)
+		}
+		// Hole punch succeeded → use QUIC for everything
+		return c.setupQUICProtocol(peerID)
+	}
+
+	// Direct connection path (existing flow)
+	return c.setupLibp2pProtocol(connCtx, peerID)
+}
+
+// isRelayConnection checks if all connections to the peer are relay (Limited).
+func (c *Client) isRelayConnection(peerID peer.ID) bool {
+	conns := c.host.Network().ConnsToPeer(peerID)
+	if len(conns) == 0 {
+		return false
+	}
+	for _, conn := range conns {
+		if !conn.Stat().Limited {
+			return false // has at least one direct connection
+		}
+	}
+	return true
+}
+
+// attemptHolePunch performs NAT detection, signaling, and UDP hole punching.
+func (c *Client) attemptHolePunch(peerID peer.ID) error {
+	// 1. Detect our NAT type
+	slog.Info("Detecting NAT type...")
+	natInfo, err := holepunch.DetectNAT(holepunch.DefaultSTUNServers)
+	if err != nil {
+		return fmt.Errorf("NAT detection failed: %w", err)
+	}
+	c.directMu.Lock()
+	c.natInfo = natInfo
+	c.directMu.Unlock()
+	slog.Info("NAT type detected", "type", natInfo.Type,
+		"public", fmt.Sprintf("%s:%d", natInfo.PublicIP, natInfo.PublicPort))
+
+	// 2. Signaling over relay
+	sigCtx, sigCancel := context.WithTimeout(c.ctx, 30*time.Second)
+	defer sigCancel()
+
+	serverNAT, sessionToken, method, tid, err := holepunch.ClientSignaling(sigCtx, c.host, peerID, natInfo)
+	if err != nil {
+		return fmt.Errorf("signaling failed: %w", err)
+	}
+	slog.Info("Signaling complete", "method", method, "server_nat", serverNAT.Type)
+
+	// 3. Create punch socket if we're the Cone side
+	var punchSock *net.UDPConn
+	if natInfo.Type.IsCone() && method != holepunch.PunchSymToCone {
+		// ConeToCone: need a dedicated socket
+		punchSock, natInfo, err = holepunch.CreatePunchSocket(holepunch.DefaultSTUNServers[0])
+		if err != nil {
+			return fmt.Errorf("create punch socket: %w", err)
+		}
+	} else if natInfo.Type.IsCone() && method == holepunch.PunchSymToCone {
+		// I'm Cone, server is Sym: need a socket to send from
+		punchSock, _, err = holepunch.CreatePunchSocket(holepunch.DefaultSTUNServers[0])
+		if err != nil {
+			return fmt.Errorf("create punch socket: %w", err)
+		}
+	}
+
+	// 4. Punch
+	punched, err := holepunch.ExecutePunch(natInfo, serverNAT, method, tid, punchSock)
+	if err != nil {
+		if punchSock != nil {
+			punchSock.Close()
+		}
+		return fmt.Errorf("hole punch failed: %w", err)
+	}
+	slog.Info("Hole punch succeeded", "local", punched.LocalAddr, "remote", punched.RemoteAddr)
+
+	// 5. Establish QUIC on punched socket
+	quicConn, err := holepunch.DirectDialQUIC(c.ctx, punched, sessionToken)
+	if err != nil {
+		punched.Conn.Close()
+		return fmt.Errorf("QUIC establishment failed: %w", err)
+	}
+
+	c.directMu.Lock()
+	c.directConn = quicConn
+	c.directMu.Unlock()
+
+	slog.Info("Direct QUIC connection established via hole punch")
+	return nil
+}
+
+// setupQUICProtocol runs the full f2p protocol (auth, verify, services) on the direct QUIC connection.
+func (c *Client) setupQUICProtocol(peerID peer.ID) error {
+	c.directMu.RLock()
+	quicConn := c.directConn
+	c.directMu.RUnlock()
+
+	if quicConn == nil {
+		return fmt.Errorf("no direct QUIC connection")
+	}
+
+	// Open control stream on QUIC
+	ctrlStream, err := quicConn.OpenStream()
+	if err != nil {
+		return fmt.Errorf("open QUIC control stream: %w", err)
+	}
+	// Write stream type prefix
+	if _, err := ctrlStream.Write([]byte{holepunch.StreamTypeControl}); err != nil {
+		ctrlStream.Close()
+		return fmt.Errorf("write control stream type: %w", err)
+	}
+
+	slog.Info("Connected to server via direct QUIC")
+
+	c.streamMutex.Lock()
+	c.controlStream = nil // no libp2p control stream
+	c.quicCtrlClose = ctrlStream
+	c.controlMessager = message.NewMessager(ctrlStream, c.config, peerID)
+	c.controlDispatcher = message.NewDispatcher(c.controlMessager)
+	c.controlDispatcher.Start()
+	c.streamMutex.Unlock()
+
+	if err := c.authenticateWithServer(); err != nil {
+		if errors.Is(err, utils.ErrPasswordInterrupted) {
+			c.setShutdownReason("user interrupt (password input)")
+			time.Sleep(1 * time.Second)
+			c.cancel()
+			return fmt.Errorf("authentication cancelled")
+		}
+		ctrlStream.Close()
+		return fmt.Errorf("authentication failed: %v", err)
+	}
+	if err := c.verifyServiceConfiguration(); err != nil {
+		ctrlStream.Close()
+		c.setShutdownReason("service verification failed (configuration error)")
+		fmt.Printf("Service verification failed - this should be your configuration issue!\nPlease check your client configuration and ensure services exist on server.\n")
+		c.cancel()
+		return fmt.Errorf("service verification failed: %v", err)
+	}
+
+	c.startServicesOnce.Do(func() { go c.startLocalServices() })
+
+	go c.monitorControlStream()
+
+	slog.Info("Client connected successfully (direct QUIC)")
+	c.printClientInfo()
+	return nil
+}
+
+// setupLibp2pProtocol is the original connection flow using libp2p streams.
+func (c *Client) setupLibp2pProtocol(connCtx context.Context, peerID peer.ID) error {
 	controlProto := protocol.ID(utils.ControlProtocol(c.config.Common.Protocol))
 	controlStream, err := c.host.NewStream(connCtx, peerID, controlProto)
 	if err != nil {
 		return fmt.Errorf("failed to create control stream: %v", err)
 	}
-
-	c.ResetBackoff()
 
 	slog.Info("Connected to server", "addr", controlStream.Conn().RemoteMultiaddr())
 
@@ -56,7 +216,6 @@ func (c *Client) connectToServer(peerID peer.ID) error {
 	if err := c.authenticateWithServer(); err != nil {
 		if errors.Is(err, utils.ErrPasswordInterrupted) {
 			c.setShutdownReason("user interrupt (password input)")
-			// allow shutdown message to flush
 			time.Sleep(1 * time.Second)
 			c.cancel()
 			return fmt.Errorf("authentication cancelled")
@@ -78,6 +237,61 @@ func (c *Client) connectToServer(peerID peer.ID) error {
 
 	slog.Info("Client connected successfully")
 	c.printClientInfo()
-
 	return nil
+}
+
+// openDataStream opens a data stream, preferring direct QUIC if available.
+func (c *Client) openDataStream(useZstd bool) (io.ReadWriteCloser, error) {
+	c.directMu.RLock()
+	quicConn := c.directConn
+	c.directMu.RUnlock()
+
+	if quicConn != nil {
+		stream, err := quicConn.OpenStream()
+		if err != nil {
+			return nil, fmt.Errorf("open QUIC data stream: %w", err)
+		}
+		streamType := holepunch.StreamTypeData
+		if useZstd {
+			streamType = holepunch.StreamTypeDataZstd
+		}
+		if _, err := stream.Write([]byte{streamType}); err != nil {
+			stream.Close()
+			return nil, fmt.Errorf("write data stream type: %w", err)
+		}
+		return stream, nil
+	}
+
+	// Fall back to libp2p
+	dataProto := protocol.ID(utils.DataProtocol(c.config.Common.Protocol))
+	if useZstd {
+		dataProto = protocol.ID(utils.DataProtocolZstd(c.config.Common.Protocol))
+	}
+	ctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
+	defer cancel()
+	// Use WithAllowLimitedConn for relay compatibility
+	ctx = network.WithAllowLimitedConn(ctx, "f2p-data")
+	return c.host.NewStream(ctx, c.serverPeerID, dataProto)
+}
+
+// isDirectMode returns true if using direct QUIC connection.
+func (c *Client) isDirectMode() bool {
+	c.directMu.RLock()
+	defer c.directMu.RUnlock()
+	return c.directConn != nil
+}
+
+// connectionInfo returns a string describing the connection type for logging.
+func (c *Client) connectionInfo() string {
+	if c.isDirectMode() {
+		return "direct-quic"
+	}
+	conns := c.host.Network().ConnsToPeer(c.serverPeerID)
+	for _, conn := range conns {
+		addr := conn.RemoteMultiaddr().String()
+		if strings.Contains(addr, "p2p-circuit") {
+			return "relay"
+		}
+	}
+	return "libp2p-direct"
 }

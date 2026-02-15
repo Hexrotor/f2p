@@ -27,11 +27,13 @@ func (c *Client) monitorControlStream() {
 		go c.startConnectionManager()
 	}()
 
+	// Check that we have a control stream (either libp2p or QUIC)
 	c.streamMutex.RLock()
 	controlStream := c.controlStream
+	quicCtrl := c.quicCtrlClose
 	c.streamMutex.RUnlock()
 
-	if controlStream == nil {
+	if controlStream == nil && quicCtrl == nil {
 		return
 	}
 
@@ -45,13 +47,7 @@ func (c *Client) monitorControlStream() {
 		default:
 			if time.Since(lastHeartbeat) > heartbeatTimeout {
 				slog.Warn("Heartbeat timeout, closing control stream to reconnect", "server", c.serverPeerID.ShortString())
-				c.streamMutex.RLock()
-				cs := c.controlStream
-				c.streamMutex.RUnlock()
-				if cs != nil {
-					_ = cs.Close()
-				}
-				c.host.Network().ClosePeer(c.serverPeerID)
+				c.closeControlStream()
 				return
 			}
 			c.streamMutex.RLock()
@@ -72,12 +68,7 @@ func (c *Client) monitorControlStream() {
 				if err != io.EOF && !strings.Contains(err.Error(), "closed") {
 					slog.Error("Control stream dispatcher error", "error", err)
 				}
-				c.streamMutex.RLock()
-				cs := c.controlStream
-				c.streamMutex.RUnlock()
-				if cs != nil {
-					_ = cs.Close()
-				}
+				c.closeControlStream()
 				return
 			}
 			if msg.IsShutdownMessage() {
@@ -93,12 +84,7 @@ func (c *Client) monitorControlStream() {
 				if msg.Message == "ping" {
 					if err := m.SendHeartbeatAck(); err != nil {
 						slog.Error("Failed to send heartbeat ack", "error", err, "server", c.serverPeerID.ShortString())
-						c.streamMutex.RLock()
-						cs := c.controlStream
-						c.streamMutex.RUnlock()
-						if cs != nil {
-							_ = cs.Close()
-						}
+						c.closeControlStream()
 						return
 					}
 				}
@@ -106,5 +92,30 @@ func (c *Client) monitorControlStream() {
 			}
 			slog.Info("Received control message", "type", msg.Type, "message", msg.Message)
 		}
+	}
+}
+
+// closeControlStream closes whichever control stream is active (libp2p or QUIC).
+func (c *Client) closeControlStream() {
+	c.streamMutex.RLock()
+	cs := c.controlStream
+	qc := c.quicCtrlClose
+	c.streamMutex.RUnlock()
+
+	if cs != nil {
+		_ = cs.Close()
+	}
+	if qc != nil {
+		_ = qc.Close()
+	}
+
+	// Also close the QUIC connection if in direct mode
+	c.directMu.RLock()
+	dc := c.directConn
+	c.directMu.RUnlock()
+	if dc != nil {
+		dc.CloseWithError(0, "control stream closed")
+	} else {
+		c.host.Network().ClosePeer(c.serverPeerID)
 	}
 }

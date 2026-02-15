@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"log/slog"
 	"strings"
 	"sync"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Hexrotor/f2p/internal/config"
+	"github.com/Hexrotor/f2p/internal/holepunch"
 	message "github.com/Hexrotor/f2p/internal/message"
 	"github.com/Hexrotor/f2p/internal/utils"
 	"github.com/libp2p/go-libp2p"
@@ -23,6 +25,7 @@ import (
 	noise "github.com/libp2p/go-libp2p/p2p/security/noise"
 	tls "github.com/libp2p/go-libp2p/p2p/security/tls"
 	"github.com/multiformats/go-multiaddr"
+	"github.com/quic-go/quic-go"
 )
 
 type Client struct {
@@ -57,6 +60,12 @@ type Client struct {
 	shutdownMu     sync.Mutex
 	shutdownReason string
 	stopping       atomic.Bool
+
+	// Direct QUIC connection via hole punching (nil if using libp2p streams)
+	directConn    *quic.Conn
+	directMu      sync.RWMutex
+	natInfo       *holepunch.NATInfo
+	quicCtrlClose io.Closer // QUIC control stream closer
 }
 
 func NewClient(cfg *config.Config) *Client {
@@ -220,17 +229,24 @@ func (c *Client) Stop() error {
 
 	c.streamMutex.RLock()
 	controlStream := c.controlStream
+	quicCtrl := c.quicCtrlClose
 	c.streamMutex.RUnlock()
 
 	c.stopping.Store(true)
 
-	if controlStream != nil {
+	// Send shutdown notification via whichever control stream is active
+	if controlStream != nil || quicCtrl != nil {
 		if c.controlMessager != nil {
 			_ = c.controlMessager.SendClientShutdownNotification()
 			// small delay to allow message flush across multiplex/encryption layers
 			time.Sleep(1 * time.Second)
 		}
-		controlStream.Close()
+		if controlStream != nil {
+			controlStream.Close()
+		}
+		if quicCtrl != nil {
+			quicCtrl.Close()
+		}
 	}
 	c.streamMutex.Lock()
 	if c.controlDispatcher != nil {
@@ -239,6 +255,14 @@ func (c *Client) Stop() error {
 	c.streamMutex.Unlock()
 
 	c.cancel()
+
+	// Close direct QUIC connection if active
+	c.directMu.RLock()
+	dc := c.directConn
+	c.directMu.RUnlock()
+	if dc != nil {
+		dc.CloseWithError(0, "client shutdown")
+	}
 
 	if c.dht != nil {
 		c.dht.Close()

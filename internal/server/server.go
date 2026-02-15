@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Hexrotor/f2p/internal/config"
+	"github.com/Hexrotor/f2p/internal/holepunch"
 	"github.com/Hexrotor/f2p/internal/message"
 	"github.com/Hexrotor/f2p/internal/utils"
 	"github.com/libp2p/go-libp2p"
@@ -32,6 +33,11 @@ type Server struct {
 	serviceProtocols     map[string]map[string]struct{} // per service protocol set for O(1) lookup
 	authenticatedClients map[peer.ID]*ClientSession
 	clientsMutex         sync.RWMutex
+
+	// Hole punching
+	natInfo    *holepunch.NATInfo
+	natInfoMu  sync.RWMutex
+	natDetected bool
 }
 
 type ClientSession struct {
@@ -141,6 +147,12 @@ func (s *Server) Start() error {
 	s.host.SetStreamHandler(ctrlProto, s.handleControlStream)
 	s.host.SetStreamHandler(dataProto, s.handleDataStream)
 	s.host.SetStreamHandler(dataZstdProto, s.handleDataStream)
+
+	// Register hole punch signaling handler
+	s.host.SetStreamHandler(protocol.ID(holepunch.SignalingProtocol), s.handleHolePunchSignaling)
+
+	// Detect NAT type in background (non-blocking)
+	go s.detectNATType()
 
 	bootstrapPeers := dht.GetDefaultBootstrapPeerAddrInfos()
 

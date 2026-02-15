@@ -1,15 +1,12 @@
 package client
 
 import (
-	"context"
 	"io"
 	"log/slog"
-	"time"
 
 	"github.com/Hexrotor/f2p/internal/config"
 	"github.com/Hexrotor/f2p/internal/message"
 	"github.com/Hexrotor/f2p/internal/utils"
-	"github.com/libp2p/go-libp2p/core/protocol"
 )
 
 func (c *Client) startLocalServices() {
@@ -50,15 +47,8 @@ func (c *Client) handleLocalConnForProtocol(local io.ReadWriteCloser, localServi
 	}
 	c.compMutex.RUnlock()
 
-	dataProto := protocol.ID(utils.DataProtocol(c.config.Common.Protocol))
-	if useZstd {
-		dataProto = protocol.ID(utils.DataProtocolZstd(c.config.Common.Protocol))
-	}
-
-	// Create data stream to server
-	ctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
-	serverStream, err := c.host.NewStream(ctx, c.serverPeerID, dataProto)
-	cancel()
+	// Create data stream to server (QUIC or libp2p)
+	serverStream, err := c.openDataStream(useZstd)
 	if err != nil {
 		slog.Error("Failed to create data stream to server", "error", err, "server", c.serverPeerID.ShortString())
 		return
@@ -84,6 +74,6 @@ func (c *Client) handleLocalConnForProtocol(local io.ReadWriteCloser, localServi
 		return
 	}
 
-	slog.Debug("Proxying connection", "service", localService.Name, "protocol", protocolType, "zstd", useZstd)
+	slog.Debug("Proxying connection", "service", localService.Name, "protocol", protocolType, "zstd", useZstd, "mode", c.connectionInfo())
 	c.proxyConnection(local, rw)
 }

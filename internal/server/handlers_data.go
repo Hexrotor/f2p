@@ -35,12 +35,16 @@ func (s *Server) handleDataStream(stream network.Stream) {
 }
 
 func (s *Server) handleServiceStreamWithCompression(stream network.Stream, clientPeer peer.ID, useZstd bool) error {
-	var rw io.ReadWriteCloser = stream
+	return s.handleDataConnection(stream, clientPeer, useZstd)
+}
+
+// handleDataConnection processes a data stream from any source (libp2p or QUIC).
+func (s *Server) handleDataConnection(rw io.ReadWriteCloser, clientPeer peer.ID, useZstd bool) error {
 	if useZstd {
-		z, err := utils.NewZstdDuplex(stream)
+		z, err := utils.NewZstdDuplex(rw)
 		if err != nil {
 			slog.Error("Failed to init zstd on data stream", "error", err)
-			_ = stream.Reset()
+			rw.Close()
 			return err
 		}
 		z.SetInfo("server", "", clientPeer.ShortString(), "") // protocol & service later
