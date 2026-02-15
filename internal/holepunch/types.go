@@ -164,6 +164,11 @@ const (
 	// Max retry rounds
 	PunchMaxRounds = 5
 
+	// Confirmation duration after Cone side detects punch success
+	// (sends punch packets back to confirmed address so Sym side can also detect)
+	PunchConfirmDuration = 1 * time.Second
+	PunchConfirmInterval = 50 * time.Millisecond
+
 	// STUN timeout per request
 	STUNTimeout = 3 * time.Second
 )

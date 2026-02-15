@@ -6,14 +6,12 @@ import (
 	"log/slog"
 	"math/big"
 	"net"
-	"sync"
 	"time"
 )
 
 // UDPSocketArray manages multiple UDP sockets for hole punching.
 type UDPSocketArray struct {
 	sockets []*net.UDPConn
-	mu      sync.Mutex
 }
 
 // NewUDPSocketArray creates n UDP sockets bound to random ports.
@@ -50,54 +48,6 @@ func (a *UDPSocketArray) Close() {
 	}
 }
 
-// ListenForPunch listens on all sockets for incoming punch packets with the given TID.
-// Returns the first socket that receives a matching packet and the remote address.
-func (a *UDPSocketArray) ListenForPunch(tid uint32, timeout time.Duration) *PunchedSocket {
-	type result struct {
-		conn       *net.UDPConn
-		remoteAddr *net.UDPAddr
-	}
-	resultCh := make(chan result, 1)
-	done := make(chan struct{})
-	defer close(done)
-
-	for _, sock := range a.sockets {
-		go func(s *net.UDPConn) {
-			buf := make([]byte, 256)
-			for {
-				s.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
-				n, raddr, err := s.ReadFromUDP(buf)
-				if err != nil {
-					select {
-					case <-done:
-						return
-					default:
-						continue
-					}
-				}
-				if rxTID, ok := ParsePunchPacket(buf[:n]); ok && rxTID == tid {
-					select {
-					case resultCh <- result{conn: s, remoteAddr: raddr}:
-					default:
-					}
-					return
-				}
-			}
-		}(sock)
-	}
-
-	select {
-	case r := <-resultCh:
-		return &PunchedSocket{
-			Conn:       r.conn,
-			LocalAddr:  r.conn.LocalAddr().(*net.UDPAddr),
-			RemoteAddr: r.remoteAddr,
-		}
-	case <-time.After(timeout):
-		return nil
-	}
-}
-
 // PunchSymToCone performs the birthday attack from the Symmetric (client) side
 // toward a Cone (server) peer.
 //
@@ -105,6 +55,9 @@ func (a *UDPSocketArray) ListenForPunch(tid uint32, timeout time.Duration) *Punc
 //  1. Client creates N sockets, each sends to server's known public port
 //  2. Server simultaneously sends to random ports on client's public IP
 //  3. Any socket that receives server's packet → punched
+//
+// Uses persistent listener goroutines (one per socket) to avoid race conditions
+// where short-lived listeners can miss incoming packets.
 func punchSymToCone(serverAddr *net.UDPAddr, tid uint32) (*PunchedSocket, error) {
 	slog.Info("Starting SymToCone punch (birthday attack)", "server", serverAddr, "sockets", SymToConeSocketCount)
 
@@ -116,30 +69,70 @@ func punchSymToCone(serverAddr *net.UDPAddr, tid uint32) (*PunchedSocket, error)
 	pkt := MakePunchPacket(tid)
 	deadline := time.Now().Add(PunchTimeout)
 
+	// Start persistent listener goroutines for all sockets
+	type punchedResult struct {
+		conn       *net.UDPConn
+		remoteAddr *net.UDPAddr
+	}
+	resultCh := make(chan punchedResult, 1)
+	stopListening := make(chan struct{})
+
+	for _, sock := range arr.sockets {
+		go func(s *net.UDPConn) {
+			buf := make([]byte, 256)
+			for {
+				select {
+				case <-stopListening:
+					return
+				default:
+				}
+				s.SetReadDeadline(time.Now().Add(1 * time.Second))
+				n, raddr, err := s.ReadFromUDP(buf)
+				if err != nil {
+					continue
+				}
+				if rxTID, ok := ParsePunchPacket(buf[:n]); ok && rxTID == tid {
+					select {
+					case resultCh <- punchedResult{conn: s, remoteAddr: raddr}:
+					default:
+					}
+					return
+				}
+			}
+		}(sock)
+	}
+
 	for round := 0; round < PunchMaxRounds && time.Now().Before(deadline); round++ {
 		slog.Debug("Punch round", "round", round+1)
 
-		// Send from all sockets to server
 		roundEnd := time.Now().Add(PunchRoundDuration)
-		for time.Now().Before(roundEnd) {
+		for time.Now().Before(roundEnd) && time.Now().Before(deadline) {
 			arr.SendAll(pkt, serverAddr)
-			// Check for response
-			punched := arr.ListenForPunch(tid, PunchSendInterval)
-			if punched != nil {
-				// Close other sockets, keep punched one
-				closeSockets(arr.sockets, punched.Conn)
-				slog.Info("Punch succeeded (SymToCone)", "local", punched.LocalAddr, "remote", punched.RemoteAddr)
-				return punched, nil
+
+			select {
+			case r := <-resultCh:
+				close(stopListening)
+				closeSockets(arr.sockets, r.conn)
+				slog.Info("Punch succeeded (SymToCone)", "local", r.conn.LocalAddr(), "remote", r.remoteAddr)
+				return &PunchedSocket{
+					Conn:       r.conn,
+					LocalAddr:  r.conn.LocalAddr().(*net.UDPAddr),
+					RemoteAddr: r.remoteAddr,
+				}, nil
+			case <-time.After(PunchSendInterval):
 			}
 		}
 	}
 
+	close(stopListening)
 	arr.Close()
 	return nil, fmt.Errorf("punch timeout after %v", PunchTimeout)
 }
 
 // PunchConeToSym is the server (Cone) side of SymToCone.
 // It sends packets to random ports on the client's public IP.
+// After detecting a client packet, it sends confirmation packets back to the
+// client's confirmed address so the Sym side can also detect the punch.
 //
 // serverSocket is the server's dedicated punch socket (fixed mapped port).
 func punchConeToSym(serverSocket *net.UDPConn, clientIP net.IP, tid uint32) (*PunchedSocket, error) {
@@ -150,7 +143,7 @@ func punchConeToSym(serverSocket *net.UDPConn, clientIP net.IP, tid uint32) (*Pu
 	deadline := time.Now().Add(PunchTimeout)
 	portIdx := 0
 
-	// Also listen for incoming punch packets
+	// Listen for incoming punch packets in background
 	type recvResult struct {
 		remoteAddr *net.UDPAddr
 	}
@@ -174,8 +167,24 @@ func punchConeToSym(serverSocket *net.UDPConn, clientIP net.IP, tid uint32) (*Pu
 		}
 	}()
 
+	// confirmAndReturn sends confirmation packets to the Sym side so it can
+	// also detect the punch, then returns the PunchedSocket.
+	confirmAndReturn := func(remoteAddr *net.UDPAddr) (*PunchedSocket, error) {
+		slog.Info("Punch succeeded (ConeToSym server), sending confirmations", "remote", remoteAddr)
+		confirmEnd := time.Now().Add(PunchConfirmDuration)
+		for time.Now().Before(confirmEnd) {
+			serverSocket.SetWriteDeadline(time.Now().Add(1 * time.Second))
+			serverSocket.WriteTo(pkt, remoteAddr)
+			time.Sleep(PunchConfirmInterval)
+		}
+		return &PunchedSocket{
+			Conn:       serverSocket,
+			LocalAddr:  serverSocket.LocalAddr().(*net.UDPAddr),
+			RemoteAddr: remoteAddr,
+		}, nil
+	}
+
 	for round := 0; round < PunchMaxRounds && time.Now().Before(deadline); round++ {
-		// How many random ports to try this round
 		packetsThisRound := randomInt(BirthdayMinPackets, BirthdayMaxPackets)
 		slog.Debug("Server punch round", "round", round+1, "packets", packetsThisRound)
 
@@ -189,30 +198,18 @@ func punchConeToSym(serverSocket *net.UDPConn, clientIP net.IP, tid uint32) (*Pu
 			serverSocket.SetWriteDeadline(time.Now().Add(1 * time.Second))
 			serverSocket.WriteTo(pkt, dstAddr)
 
-			// Check for response every 100 packets
 			if i%100 == 99 {
 				select {
 				case r := <-recvCh:
-					slog.Info("Punch succeeded (ConeToSym server)", "remote", r.remoteAddr)
-					return &PunchedSocket{
-						Conn:       serverSocket,
-						LocalAddr:  serverSocket.LocalAddr().(*net.UDPAddr),
-						RemoteAddr: r.remoteAddr,
-					}, nil
+					return confirmAndReturn(r.remoteAddr)
 				default:
 				}
 			}
 		}
 
-		// Check at end of round
 		select {
 		case r := <-recvCh:
-			slog.Info("Punch succeeded (ConeToSym server)", "remote", r.remoteAddr)
-			return &PunchedSocket{
-				Conn:       serverSocket,
-				LocalAddr:  serverSocket.LocalAddr().(*net.UDPAddr),
-				RemoteAddr: r.remoteAddr,
-			}, nil
+			return confirmAndReturn(r.remoteAddr)
 		case <-time.After(1 * time.Second):
 		}
 	}
@@ -221,6 +218,7 @@ func punchConeToSym(serverSocket *net.UDPConn, clientIP net.IP, tid uint32) (*Pu
 }
 
 // PunchBothEasySym performs port-prediction based punching for two Easy Symmetric NATs.
+// Uses persistent listener goroutines for reliable packet detection.
 func punchBothEasySym(
 	peerAddr *net.UDPAddr,
 	myIncremental bool,
@@ -247,16 +245,57 @@ func punchBothEasySym(
 	pkt := MakePunchPacket(tid)
 	deadline := time.Now().Add(PunchTimeout)
 
+	// Start persistent listener goroutines
+	type punchedResult struct {
+		conn       *net.UDPConn
+		remoteAddr *net.UDPAddr
+	}
+	resultCh := make(chan punchedResult, 1)
+	stopListening := make(chan struct{})
+
+	for _, sock := range arr.sockets {
+		go func(s *net.UDPConn) {
+			buf := make([]byte, 256)
+			for {
+				select {
+				case <-stopListening:
+					return
+				default:
+				}
+				s.SetReadDeadline(time.Now().Add(1 * time.Second))
+				n, raddr, err := s.ReadFromUDP(buf)
+				if err != nil {
+					continue
+				}
+				if rxTID, ok := ParsePunchPacket(buf[:n]); ok && rxTID == tid {
+					select {
+					case resultCh <- punchedResult{conn: s, remoteAddr: raddr}:
+					default:
+					}
+					return
+				}
+			}
+		}(sock)
+	}
+
 	for time.Now().Before(deadline) {
 		arr.SendAll(pkt, targetAddr)
-		punched := arr.ListenForPunch(tid, PunchSendInterval)
-		if punched != nil {
-			closeSockets(arr.sockets, punched.Conn)
-			slog.Info("Punch succeeded (BothEasySym)", "local", punched.LocalAddr, "remote", punched.RemoteAddr)
-			return punched, nil
+
+		select {
+		case r := <-resultCh:
+			close(stopListening)
+			closeSockets(arr.sockets, r.conn)
+			slog.Info("Punch succeeded (BothEasySym)", "local", r.conn.LocalAddr(), "remote", r.remoteAddr)
+			return &PunchedSocket{
+				Conn:       r.conn,
+				LocalAddr:  r.conn.LocalAddr().(*net.UDPAddr),
+				RemoteAddr: r.remoteAddr,
+			}, nil
+		case <-time.After(PunchSendInterval):
 		}
 	}
 
+	close(stopListening)
 	arr.Close()
 	return nil, fmt.Errorf("both easy sym punch timeout")
 }
