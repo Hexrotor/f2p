@@ -72,6 +72,7 @@ type CommonConfig struct {
 	ZstdLevel       int      `toml:"zstd_level"`
 	ZstdMinSizeB    int      `toml:"zstd_min_size_b"`
 	ZstdChunkSizeKB int      `toml:"zstd_chunk_size_kb"`
+	StunServers     []string `toml:"stun_servers,omitempty"` // Custom STUN servers for hole punching (optional)
 }
 
 var True = true

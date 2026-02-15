@@ -55,6 +55,7 @@ func (c *Client) connectToServer(peerID peer.ID) error {
 		return c.setupQUICProtocol(peerID)
 	}
 
+	slog.Info("Direct connection established, using libp2p protocol")
 	// Direct connection path (existing flow)
 	return c.setupLibp2pProtocol(connCtx, peerID)
 }
@@ -75,17 +76,32 @@ func (c *Client) isRelayConnection(peerID peer.ID) bool {
 
 // attemptHolePunch performs NAT detection, signaling, and UDP hole punching.
 func (c *Client) attemptHolePunch(peerID peer.ID) error {
-	// 1. Detect our NAT type
-	slog.Info("Detecting NAT type...")
-	natInfo, err := holepunch.DetectNAT(holepunch.DefaultSTUNServers)
-	if err != nil {
-		return fmt.Errorf("NAT detection failed: %w", err)
+	stunServers := c.config.Common.StunServers
+	if len(stunServers) == 0 {
+		stunServers = holepunch.DefaultSTUNServers
 	}
-	c.directMu.Lock()
-	c.natInfo = natInfo
-	c.directMu.Unlock()
-	slog.Info("NAT type detected", "type", natInfo.Type,
-		"public", fmt.Sprintf("%s:%d", natInfo.PublicIP, natInfo.PublicPort))
+
+	// 1. Use cached NAT info if available, otherwise detect via STUN
+	c.directMu.RLock()
+	natInfo := c.natInfo
+	detected := c.natDetected
+	c.directMu.RUnlock()
+
+	if !detected || natInfo == nil {
+		slog.Info("Detecting NAT type...")
+		var err error
+		natInfo, err = holepunch.DetectNAT(stunServers)
+		if err != nil {
+			return fmt.Errorf("NAT detection failed: %w", err)
+		}
+		c.directMu.Lock()
+		c.natInfo = natInfo
+		c.natDetected = true
+		c.directMu.Unlock()
+	} else {
+		slog.Info("Using cached NAT info", "type", natInfo.Type,
+			"public", fmt.Sprintf("%s:%d", natInfo.PublicIP, natInfo.PublicPort))
+	}
 
 	// 2. Signaling over relay
 	sigCtx, sigCancel := context.WithTimeout(c.ctx, 30*time.Second)
@@ -101,13 +117,13 @@ func (c *Client) attemptHolePunch(peerID peer.ID) error {
 	var punchSock *net.UDPConn
 	if natInfo.Type.IsCone() && method != holepunch.PunchSymToCone {
 		// ConeToCone: need a dedicated socket
-		punchSock, natInfo, err = holepunch.CreatePunchSocket(holepunch.DefaultSTUNServers[0])
+		punchSock, natInfo, err = holepunch.CreatePunchSocket(stunServers[0])
 		if err != nil {
 			return fmt.Errorf("create punch socket: %w", err)
 		}
 	} else if natInfo.Type.IsCone() && method == holepunch.PunchSymToCone {
 		// I'm Cone, server is Sym: need a socket to send from
-		punchSock, _, err = holepunch.CreatePunchSocket(holepunch.DefaultSTUNServers[0])
+		punchSock, _, err = holepunch.CreatePunchSocket(stunServers[0])
 		if err != nil {
 			return fmt.Errorf("create punch socket: %w", err)
 		}

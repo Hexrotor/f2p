@@ -17,7 +17,13 @@ import (
 // detectNATType runs STUN-based NAT detection and caches the result.
 func (s *Server) detectNATType() {
 	slog.Info("Detecting server NAT type...")
-	natInfo, err := holepunch.DetectNAT(holepunch.DefaultSTUNServers)
+
+	stunServers := s.config.Common.StunServers
+	if len(stunServers) == 0 {
+		stunServers = holepunch.DefaultSTUNServers
+	}
+
+	natInfo, err := holepunch.DetectNAT(stunServers)
 	if err != nil {
 		slog.Warn("NAT detection failed, hole punching will be unavailable", "error", err)
 		return
@@ -59,11 +65,16 @@ func (s *Server) handleHolePunchSignaling(stream network.Stream) {
 	}
 
 	// Run signaling protocol
+	stunServers := s.config.Common.StunServers
+	if len(stunServers) == 0 {
+		stunServers = holepunch.DefaultSTUNServers
+	}
+
 	err = holepunch.ServerSignalingHandler(
 		stream,
 		natInfo.Type,
 		natInfo,
-		holepunch.DefaultSTUNServers[0],
+		stunServers[0],
 		sessionToken,
 		func(punchSock *net.UDPConn, myNAT *holepunch.NATInfo, clientNAT *holepunch.NATInfo, method holepunch.PunchMethod, tid uint32) error {
 			// Start punch + QUIC goroutine

@@ -151,9 +151,6 @@ func (s *Server) Start() error {
 	// Register hole punch signaling handler
 	s.host.SetStreamHandler(protocol.ID(holepunch.SignalingProtocol), s.handleHolePunchSignaling)
 
-	// Detect NAT type in background (non-blocking)
-	go s.detectNATType()
-
 	bootstrapPeers := dht.GetDefaultBootstrapPeerAddrInfos()
 
 	s.dht, err = dht.New(s.ctx, s.host, dht.BootstrapPeers(bootstrapPeers...))
@@ -199,6 +196,10 @@ func (s *Server) Start() error {
 	}
 
 	s.printServerInfo()
+
+	// Detect NAT type in background after peers are connected
+	// (libp2p observed addresses should be available by now)
+	go s.detectNATType()
 
 	return nil
 }

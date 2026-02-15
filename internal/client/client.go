@@ -65,6 +65,7 @@ type Client struct {
 	directConn    *quic.Conn
 	directMu      sync.RWMutex
 	natInfo       *holepunch.NATInfo
+	natDetected   bool
 	quicCtrlClose io.Closer // QUIC control stream closer
 }
 
@@ -174,8 +175,36 @@ func (c *Client) Start() error {
 		}
 	}
 
+	// Detect NAT type in background (non-blocking)
+	go c.detectNATType()
+
 	go c.startConnectionManager()
 	return nil
+}
+
+// detectNATType runs STUN-based NAT detection and caches the result.
+func (c *Client) detectNATType() {
+	slog.Info("Detecting client NAT type...")
+
+	stunServers := c.config.Common.StunServers
+	if len(stunServers) == 0 {
+		stunServers = holepunch.DefaultSTUNServers
+	}
+
+	natInfo, err := holepunch.DetectNAT(stunServers)
+	if err != nil {
+		slog.Warn("NAT detection failed", "error", err)
+		return
+	}
+
+	c.directMu.Lock()
+	c.natInfo = natInfo
+	c.natDetected = true
+	c.directMu.Unlock()
+
+	slog.Info("Client NAT detected",
+		"type", natInfo.Type,
+		"public", fmt.Sprintf("%s:%d", natInfo.PublicIP, natInfo.PublicPort))
 }
 
 func (c *Client) startConnectionManager() {
