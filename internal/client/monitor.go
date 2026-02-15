@@ -149,7 +149,14 @@ func (c *Client) cleanupPreviousConnection() {
 	// 4. Close and nil out direct QUIC connection
 	c.cleanupDirectConn("new connection cycle")
 
-	// 5. Close any stale libp2p peer connections
+	// 5. Invalidate cached NAT info so it gets re-detected on next hole punch.
+	// Network conditions may have changed since the last detection.
+	c.directMu.Lock()
+	c.natInfo = nil
+	c.natDetected = false
+	c.directMu.Unlock()
+
+	// 6. Close any stale libp2p peer connections
 	c.host.Network().ClosePeer(c.serverPeerID)
 
 	slog.Debug("Cleaned up previous connection state")
