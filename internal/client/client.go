@@ -127,11 +127,11 @@ func (c *Client) Start() error {
 		listenAddrs = append(listenAddrs, addr)
 	}
 
-	// Build hole punch options: always enable v2 (ObservedAddr-based),
-	// optionally add STUN servers for more precise NAT sub-type detection.
+	// Build hole punch options: always enable v2 (includes default STUN),
+	// optionally override STUN servers with user-configured ones.
 	hpOpts := []holepunch.Option{holepunch.EnableV2()}
 	if len(c.config.Common.StunServers) >= 2 {
-		hpOpts = []holepunch.Option{holepunch.WithSTUNServers(c.config.Common.StunServers)}
+		hpOpts = append(hpOpts, holepunch.WithSTUNServers(c.config.Common.StunServers))
 	}
 
 	opts := []libp2p.Option{
