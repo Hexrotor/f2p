@@ -19,6 +19,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/libp2p/go-libp2p/p2p/host/autorelay"
+	basichost "github.com/libp2p/go-libp2p/p2p/host/basic"
 	"github.com/libp2p/go-libp2p/p2p/protocol/holepunch"
 	"github.com/multiformats/go-multiaddr"
 )
@@ -135,9 +136,10 @@ func (s *Server) Start() error {
 		return fmt.Errorf("failed to create libp2p host: %v", err)
 	}
 
-	// Server's full peer ID may not be logged for security reasons?
 	slog.Info("Server created", "id", s.host.ID().ShortString())
 	slog.Info("Server listening on", "addresses", s.host.Addrs())
+
+	s.logDCUtRStatus()
 
 	// We use protocol /control for f2p message communication
 	// Use /data for no zstd compression data transfer
@@ -254,4 +256,34 @@ func (s *Server) Stop() error {
 
 func (s *Server) Wait() {
 	<-s.ctx.Done()
+}
+
+// logDCUtRStatus starts a background goroutine that waits for NAT detection
+// to complete and logs the result at Info level.
+func (s *Server) logDCUtRStatus() {
+	bh, ok := s.host.(*basichost.BasicHost)
+	if !ok {
+		return
+	}
+	hps := bh.HolePunchService()
+	if hps == nil {
+		return
+	}
+
+	go func() {
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-s.ctx.Done():
+				return
+			case <-ticker.C:
+				natType := hps.NATType()
+				if natType != holepunch.NATUnknown {
+					slog.Info("DCUtR v2 NAT detected", "type", natType.String())
+					return
+				}
+			}
+		}
+	}()
 }

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Hexrotor/f2p/internal/message"
+	basichost "github.com/libp2p/go-libp2p/p2p/host/basic"
 )
 
 func (s *Server) printServerInfo() {
@@ -27,6 +28,16 @@ func (s *Server) printServerInfo() {
 			protocolsStr := strings.Join(service.Protocol, ", ")
 			fmt.Printf("     ├─ Target: %s\n", service.Target)
 			fmt.Printf("     └─ Protocols: %s\n", protocolsStr)
+		}
+	}
+
+	// Show DCUtR v2 status
+	if bh, ok := s.host.(*basichost.BasicHost); ok {
+		if hps := bh.HolePunchService(); hps != nil {
+			natType := hps.NATType()
+			fmt.Printf("\nDCUtR v2: enabled (NAT: %s)\n", natType)
+		} else {
+			fmt.Println("\nDCUtR v2: disabled")
 		}
 	}
 

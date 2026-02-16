@@ -19,6 +19,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
+	basichost "github.com/libp2p/go-libp2p/p2p/host/basic"
 	"github.com/libp2p/go-libp2p/p2p/net/swarm"
 	"github.com/libp2p/go-libp2p/p2p/protocol/holepunch"
 	noise "github.com/libp2p/go-libp2p/p2p/security/noise"
@@ -152,6 +153,8 @@ func (c *Client) Start() error {
 	}
 
 	slog.Info("Client created", "id", c.host.ID())
+
+	c.logDCUtRStatus()
 
 	bootstrapPeers := dht.GetDefaultBootstrapPeerAddrInfos()
 
@@ -319,6 +322,19 @@ func (c *Client) printClientInfo() {
 
 	output.WriteString(fmt.Sprintf("Connected to Server: %s\n", c.serverPeerID.ShortString()))
 
+	// Show connection type (direct vs relay)
+	connType := "unknown"
+	for _, conn := range c.host.Network().ConnsToPeer(c.serverPeerID) {
+		addr := conn.RemoteMultiaddr().String()
+		if strings.Contains(addr, "p2p-circuit") {
+			connType = "relay"
+		} else {
+			connType = "direct"
+			break // prefer direct
+		}
+	}
+	output.WriteString(fmt.Sprintf("Connection Type: %s\n", connType))
+
 	output.WriteString("\nLocal Services:\n")
 	for _, service := range c.localServices {
 		serviceStatus := "Disabled"
@@ -334,7 +350,49 @@ func (c *Client) printClientInfo() {
 		}
 	}
 
+	// Show DCUtR v2 status
+	if bh, ok := c.host.(*basichost.BasicHost); ok {
+		if hps := bh.HolePunchService(); hps != nil {
+			natType := hps.NATType()
+			output.WriteString(fmt.Sprintf("\nDCUtR v2: enabled (NAT: %s)\n", natType))
+		} else {
+			output.WriteString("\nDCUtR v2: disabled\n")
+		}
+	}
+
 	output.WriteString(strings.Repeat("=", 60) + "\n\n")
 
 	fmt.Print(output.String())
+}
+
+// logDCUtRStatus starts a background goroutine that waits for NAT detection
+// to complete and logs the result. Since NAT detection depends on having
+// enough observations from other peers, this may not be available immediately.
+func (c *Client) logDCUtRStatus() {
+	bh, ok := c.host.(*basichost.BasicHost)
+	if !ok {
+		return
+	}
+	hps := bh.HolePunchService()
+	if hps == nil {
+		return
+	}
+
+	go func() {
+		// Wait a bit for identify to exchange observations
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-c.ctx.Done():
+				return
+			case <-ticker.C:
+				natType := hps.NATType()
+				if natType != holepunch.NATUnknown {
+					slog.Info("DCUtR v2 NAT detected", "type", natType.String())
+					return
+				}
+			}
+		}
+	}()
 }

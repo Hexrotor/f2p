@@ -105,6 +105,53 @@ func (h *CustomHandler) WithGroup(name string) slog.Handler {
 	return h
 }
 
+// subsystemFilter wraps a handler and only forwards log records from
+// allowed subsystems (identified by the "logger" attribute set by gologshim).
+// This prevents the entire go-libp2p logging firehose from flooding the console.
+type subsystemFilter struct {
+	inner   slog.Handler
+	allowed map[string]bool
+}
+
+func (f *subsystemFilter) Enabled(ctx context.Context, level slog.Level) bool {
+	return f.inner.Enabled(ctx, level)
+}
+
+func (f *subsystemFilter) Handle(ctx context.Context, r slog.Record) error {
+	return f.inner.Handle(ctx, r)
+}
+
+func (f *subsystemFilter) WithAttrs(attrs []slog.Attr) slog.Handler {
+	// Check if one of the attrs is the "logger" key (set by gologshim).
+	// If it's not in the allowed set, return a no-op handler.
+	for _, a := range attrs {
+		if a.Key == "logger" {
+			if !f.allowed[a.Value.String()] {
+				return &nopHandler{}
+			}
+		}
+	}
+	return &subsystemFilter{
+		inner:   f.inner.WithAttrs(attrs),
+		allowed: f.allowed,
+	}
+}
+
+func (f *subsystemFilter) WithGroup(name string) slog.Handler {
+	return &subsystemFilter{
+		inner:   f.inner.WithGroup(name),
+		allowed: f.allowed,
+	}
+}
+
+// nopHandler discards all log records.
+type nopHandler struct{}
+
+func (n *nopHandler) Enabled(_ context.Context, _ slog.Level) bool  { return false }
+func (n *nopHandler) Handle(_ context.Context, _ slog.Record) error { return nil }
+func (n *nopHandler) WithAttrs(_ []slog.Attr) slog.Handler          { return n }
+func (n *nopHandler) WithGroup(_ string) slog.Handler               { return n }
+
 func InitLogger(level string) {
 	var logLevel slog.Level
 
@@ -124,8 +171,13 @@ func InitLogger(level string) {
 	handler := NewCustomHandler(os.Stdout, logLevel)
 	logger = slog.New(handler)
 	slog.SetDefault(logger)
-	// Bridge go-libp2p's internal logging (gologshim) to f2p's handler,
-	// so holepunch/swarm/identify logs appear in the console with the
-	// same format and respect the configured log level.
-	gologshim.SetDefaultHandler(handler)
+	// Bridge only the p2p-holepunch subsystem from go-libp2p to f2p's handler.
+	// Other subsystems (swarm, identify, DHT, etc.) are silenced to avoid
+	// flooding the console.
+	gologshim.SetDefaultHandler(&subsystemFilter{
+		inner: handler,
+		allowed: map[string]bool{
+			"p2p-holepunch": true,
+		},
+	})
 }
