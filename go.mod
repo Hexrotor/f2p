@@ -127,4 +127,4 @@ require (
 	lukechampine.com/blake3 v1.4.1 // indirect
 )
 
-replace github.com/libp2p/go-libp2p => github.com/Hexrotor/go-libp2p v0.0.0-20260216010903-6e7b69b3767d
+replace github.com/libp2p/go-libp2p => github.com/Hexrotor/go-libp2p v0.0.0-20260216013956-e8614f2e3d27
