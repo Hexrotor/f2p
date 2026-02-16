@@ -8,6 +8,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	gologshim "github.com/libp2p/go-libp2p/gologshim"
 )
 
 var logger *slog.Logger
@@ -16,6 +18,7 @@ type CustomHandler struct {
 	level slog.Level
 	w     io.Writer
 	loc   *time.Location
+	attrs []slog.Attr // pre-configured attributes from WithAttrs
 }
 
 func NewCustomHandler(w io.Writer, level slog.Level) *CustomHandler {
@@ -68,6 +71,11 @@ func (h *CustomHandler) Handle(_ context.Context, r slog.Record) error {
 	var msg strings.Builder
 	msg.WriteString(fmt.Sprintf("%s[%s] [%s] %s\033[0m", colorCode, timeStr, levelStr, r.Message))
 
+	for _, a := range h.attrs {
+		if a.Key != "" {
+			msg.WriteString(fmt.Sprintf(" \033[90m(%s: %v)\033[0m", a.Key, a.Value))
+		}
+	}
 	r.Attrs(func(a slog.Attr) bool {
 		if a.Key != "" {
 			msg.WriteString(fmt.Sprintf(" \033[90m(%s: %v)\033[0m", a.Key, a.Value)) // 深灰色属性
@@ -82,7 +90,15 @@ func (h *CustomHandler) Handle(_ context.Context, r slog.Record) error {
 }
 
 func (h *CustomHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return h
+	newAttrs := make([]slog.Attr, len(h.attrs)+len(attrs))
+	copy(newAttrs, h.attrs)
+	copy(newAttrs[len(h.attrs):], attrs)
+	return &CustomHandler{
+		level: h.level,
+		w:     h.w,
+		loc:   h.loc,
+		attrs: newAttrs,
+	}
 }
 
 func (h *CustomHandler) WithGroup(name string) slog.Handler {
@@ -108,4 +124,8 @@ func InitLogger(level string) {
 	handler := NewCustomHandler(os.Stdout, logLevel)
 	logger = slog.New(handler)
 	slog.SetDefault(logger)
+	// Bridge go-libp2p's internal logging (gologshim) to f2p's handler,
+	// so holepunch/swarm/identify logs appear in the console with the
+	// same format and respect the configured log level.
+	gologshim.SetDefaultHandler(handler)
 }
