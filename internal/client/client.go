@@ -21,6 +21,8 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
+	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
+	"github.com/libp2p/go-libp2p/p2p/net/connmgr"
 	"github.com/libp2p/go-libp2p/p2p/net/swarm"
 	noise "github.com/libp2p/go-libp2p/p2p/security/noise"
 	tls "github.com/libp2p/go-libp2p/p2p/security/tls"
@@ -146,6 +148,29 @@ func (c *Client) Start() error {
 		libp2p.Security(noise.ID, noise.New),
 		libp2p.Security(tls.ID, tls.New),
 		libp2p.SwarmOpts(swarm.WithDialTimeout(5 * time.Second)),
+	}
+
+	// ConnManager: 控制空闲连接数量，超过 HighWater 时修剪最不活跃的连接
+	cm, err := connmgr.NewConnManager(
+		20, // LowWater: 保持至少 20 个连接
+		40, // HighWater: 超过 40 个开始修剪
+		connmgr.WithGracePeriod(time.Minute),
+	)
+	if err != nil {
+		slog.Warn("Failed to create connection manager", "error", err)
+	} else {
+		opts = append(opts, libp2p.ConnectionManager(cm))
+		slog.Info("Connection manager enabled", "low", 20, "high", 40)
+	}
+
+	// ResourceManager: 根据系统资源自动缩放连接数、流数、内存限制
+	limiter := rcmgr.NewFixedLimiter(rcmgr.DefaultLimits.AutoScale())
+	rm, err := rcmgr.NewResourceManager(limiter)
+	if err != nil {
+		slog.Warn("Failed to create resource manager", "error", err)
+	} else {
+		opts = append(opts, libp2p.ResourceManager(rm))
+		slog.Info("Resource manager enabled (auto-scaled limits)")
 	}
 
 	c.host, err = libp2p.New(opts...)
