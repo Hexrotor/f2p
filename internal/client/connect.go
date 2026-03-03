@@ -7,7 +7,6 @@ import (
 	"io"
 	"log/slog"
 	"net"
-	"strings"
 	"time"
 
 	"github.com/Hexrotor/f2p/internal/holepunch"
@@ -349,11 +348,15 @@ func (c *Client) connectionInfo() string {
 		return "direct-quic"
 	}
 	conns := c.host.Network().ConnsToPeer(c.serverPeerID)
+	hasRelay := false
 	for _, conn := range conns {
-		addr := conn.RemoteMultiaddr().String()
-		if strings.Contains(addr, "p2p-circuit") {
-			return "relay"
+		if !conn.Stat().Limited {
+			return "libp2p-direct" // 有直连就优先报直连
 		}
+		hasRelay = true
 	}
-	return "libp2p-direct"
+	if hasRelay {
+		return "relay"
+	}
+	return "unknown"
 }
