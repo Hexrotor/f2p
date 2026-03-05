@@ -54,6 +54,7 @@ func (s *Server) handleControlStream(stream network.Stream) {
 	s.clientsMutex.Lock()
 	s.authenticatedClients[remotePeer] = cs
 	s.clientsMutex.Unlock()
+	s.host.ConnManager().TagPeer(remotePeer, "authenticated-client", 100)
 	go s.monitorControlStream(cs)
 }
 
@@ -70,6 +71,8 @@ func (s *Server) handleAuthenticationStream(stream network.Stream) error {
 	s.clientsMutex.Lock()
 	s.authenticatedClients[remotePeer] = cs
 	s.clientsMutex.Unlock()
+	// 防止 ConnManager 修剪已认证客户端的连接
+	s.host.ConnManager().TagPeer(remotePeer, "authenticated-client", 100)
 	go s.monitorControlStream(cs)
 	return nil
 }
@@ -85,6 +88,8 @@ func (s *Server) monitorControlStream(clientSession *ClientSession) {
 		s.clientsMutex.Unlock()
 
 		slog.Info("Client disconnected", "client", clientSession.peerID.String())
+
+		s.host.ConnManager().UntagPeer(clientSession.peerID, "authenticated-client")
 
 		if clientSession.controlStream != nil {
 			_ = clientSession.controlStream.Close()

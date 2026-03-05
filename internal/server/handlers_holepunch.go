@@ -221,6 +221,7 @@ func (s *Server) handleQUICControlStream(stream *quic.Stream, clientPeer peer.ID
 	s.clientsMutex.Lock()
 	s.authenticatedClients[clientPeer] = cs
 	s.clientsMutex.Unlock()
+	s.host.ConnManager().TagPeer(clientPeer, "authenticated-client", 100)
 
 	// Monitor heartbeat (reuses existing logic)
 	s.monitorControlStream(cs)
