@@ -16,7 +16,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.24'
+        go-version: '1.25'
 
     - name: Build
       run: CGO_ENABLED=1 go build -ldflags="-s -w" -o build/f2p ./cmd/f2p

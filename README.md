@@ -12,7 +12,7 @@ Download from [Releases](https://github.com/Hexrotor/f2p/releases) or build from
 
 ### Build
 
-This project uses CGO zstd for compression. Ensure you have working C toolchain.
+This project uses CGO zstd for compression. Requires **Go 1.25+** and a working C toolchain.
 
 #### Windows
 1. Install [MinGW-w64](https://www.mingw-w64.org/) and add it to PATH.

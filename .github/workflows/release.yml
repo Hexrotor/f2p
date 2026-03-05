@@ -20,7 +20,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '>=1.21'
+          go-version: '1.25'
           cache: true
 
       - name: Install build tools
@@ -83,7 +83,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '>=1.21'
+          go-version: '1.25'
           cache: true
 
       - name: Install MSYS2 and mingw-w64
@@ -135,7 +135,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '>=1.21'
+          go-version: '1.25'
           cache: true
 
       - name: Download Android NDK

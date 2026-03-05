@@ -10,7 +10,7 @@ F2P 是一个基于 libp2p 的远程端口转发程序，支持 TCP+UDP，使用
 
 ### 编译
 
-本项目使用 CGO 以支持高性能 zstd 压缩，需确保本地有 C 编译环境。
+本项目使用 CGO 以支持高性能 zstd 压缩，需要 **Go 1.25+** 和 C 编译环境。
 
 #### Windows
 1. 安装 [MinGW-w64](https://www.mingw-w64.org/) 并配置到 PATH。
