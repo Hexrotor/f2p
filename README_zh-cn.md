@@ -37,7 +37,13 @@ F2P 是一个基于 libp2p 的远程端口转发程序，支持 TCP+UDP，使用
 
 - 主机发现：libp2p 由 IPFS 项目衍生而来，可以直接接入 IPFS 的 DHT 网络，在 DHT 网络中客户端可以通过 `PeerID` 获取到对应 peer 的 `multiaddr` 从而发起连接
 - 建立连接：libp2p 制定了一套自动中继机制与 NAT 打洞机制，本程序服务端会自动注册一批 peer 用于自身的中继。客户端在 DHT 网络中寻找服务端时，往往会先得到服务端的中继地址先建立中继连接，随后 libp2p 会尝试将其升级为打洞直连。**使用 [NatTypeTester](https://github.com/HMBSbige/NatTypeTester) 测试你的网络环境是否能 NAT 打洞成功。**
-- 目前的问题：若服务端既没有公网 IPv4，也不能通过 IPv6 或打洞实现直连，则最终连接会失败。因为 libp2p 规定了中继能提供的服务是有限的，如果不在代码中显式指定 `WithAllowLimitedConn`，就不能使用中继建立 stream。经过测试，中继似乎最多允许一个 stream，并且中继提供的流量转发是有限的，局限性太大并且延迟高，故暂时不考虑启用。
+- 自定义 NAT4 打洞：当 libp2p 内置的 DCUtR 无法将中继连接升级为直连时，F2P 会回退到自己实现的 UDP 打洞。通过 STUN 检测 NAT 类型，然后选择合适的打洞策略：
+  - **Cone-to-Cone**：双方互相发送到对方已知的公网地址。
+  - **Symmetric-to-Cone（生日攻击）**：Symmetric 端开启大量 socket；Cone 端向随机端口发送；任何匹配即打通。
+  - **Easy Symmetric-to-Easy Symmetric**：对端口递增/递减分配的 NAT 使用端口预测。
+
+  打洞成功后，在 UDP socket 上建立 QUIC 直连用于后续所有数据传输。可在配置文件 `[common]` 下通过 `stun_servers` 指定自定义 STUN 服务器。
+- 目前的局限：若服务端既没有公网 IPv4，也不能通过 IPv6 或打洞实现直连，则最终连接会失败。libp2p 中继有总流量限制且延迟高，本项目不使用中继进行数据传输。
 
 ## 命令参数
 
@@ -141,6 +147,10 @@ zstd_chunk_size_kb = 32   # 压缩分块大小
 # zstd
 
 考虑到 p2p 通信的带宽可能并不理想，本项目引入了 zstd 压缩传输数据。经测试选择了使用 CGO zstd，因为纯 Go 的 zstd 实现会有很高的内存占用，直到 GC 才会被释放。数据帧压缩是动态判断的，如果压缩后比原数据大就会选择发送原数据。这是为了确保压缩功能使网络开销只降不增，但刚刚压缩过程的 CPU 压缩开销就浪费了，如果您发现有更好的策略，欢迎提交 issue/pr。默认压缩等级现在为最高级 20，考虑到可能有低性能设备，后续可能更改默认值。
+
+## 致谢
+
+- NAT4 打洞实现参考了 [EasyTier](https://github.com/EasyTier/EasyTier) 的设计思路。
 
 ## License
 

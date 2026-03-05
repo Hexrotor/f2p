@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"strings"
 	"time"
-
-	"github.com/Hexrotor/f2p/internal/message"
 )
 
 func (s *Server) printServerInfo() {
@@ -52,10 +50,11 @@ func (s *Server) notifyClientsServerShutdown() {
 
 	for _, cs := range clients {
 		go func(cs *ClientSession) {
-			if cs.controlStream != nil {
-				h := message.NewMessager(cs.controlStream, s.config, cs.peerID)
-				_ = h.SendServerShutdownNotification()
+			if cs.controlMessager != nil {
+				_ = cs.controlMessager.SendServerShutdownNotification()
 				time.Sleep(100 * time.Millisecond)
+			}
+			if cs.controlStream != nil {
 				_ = cs.controlStream.Close()
 			}
 		}(cs)

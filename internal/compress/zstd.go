@@ -1,4 +1,4 @@
-package utils
+package compress
 
 import (
 	"bytes"
@@ -161,7 +161,6 @@ func (z *ZstdDuplex) Write(p []byte) (int, error) {
 			if err == nil {
 				compHead := 1 + uvarintLen(uint64(len(compBytes)))
 				useCompressed = float64(len(compBytes)+compHead) < float64(len(chunk))*compressRatio
-				// If size gets bigger than before, we don't send compressed data
 				if useCompressed {
 					compressed.Write(compBytes)
 				}
@@ -210,7 +209,6 @@ func (z *ZstdDuplex) Close() error {
 			if z.rdOrigBytes > 0 {
 				rdRatio = float64(z.rdStoredBytes) / float64(z.rdOrigBytes)
 			}
-			// log summary for further zstd performance tests
 			slog.Debug("zstd summary",
 				"side", z.metaSide,
 				"service", z.metaService,

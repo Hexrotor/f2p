@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -11,10 +12,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Hexrotor/f2p/internal/compress"
 	"github.com/Hexrotor/f2p/internal/config"
 	"github.com/Hexrotor/f2p/internal/holepunch"
 	message "github.com/Hexrotor/f2p/internal/message"
-	"github.com/Hexrotor/f2p/internal/utils"
+	"github.com/Hexrotor/f2p/internal/version"
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/crypto"
@@ -94,7 +96,7 @@ func NewClient(cfg *config.Config) *Client {
 func (c *Client) Start() error {
 	fmt.Println("Starting P2P Forward Client...")
 
-	utils.ConfigureZstdParams(
+	compress.ConfigureZstdParams(
 		c.config.Common.ZstdLevel,
 		c.config.Common.ZstdMinSizeB,
 		c.config.Common.ZstdChunkSizeKB*1024,
@@ -143,7 +145,7 @@ func (c *Client) Start() error {
 		libp2p.EnableHolePunching(),
 		libp2p.EnableAutoNATv2(),
 		libp2p.EnableNATService(),
-		libp2p.UserAgent(utils.GetUserAgent()),
+		libp2p.UserAgent(version.UserAgent()),
 		libp2p.NATPortMap(),
 		libp2p.Security(noise.ID, noise.New),
 		libp2p.Security(tls.ID, tls.New),
@@ -254,7 +256,7 @@ func (c *Client) startConnectionManager() {
 
 				slog.Error("Connection failed", "error", err, "server", c.serverPeerID.ShortString())
 				interval := c.GetBackoff()
-				fmt.Printf("Retrying in %v...\n", interval)
+				slog.Info("Retrying connection", "interval", interval)
 
 				select {
 				case <-c.ctx.Done():
@@ -371,7 +373,7 @@ func (c *Client) generateClientKey() (crypto.PrivKey, error) {
 		slog.Warn("Failed to load saved private key, generating new one", "error", err)
 	}
 
-	privKey, _, err := crypto.GenerateEd25519Key(nil)
+	privKey, _, err := crypto.GenerateEd25519Key(rand.Reader)
 	return privKey, err
 }
 

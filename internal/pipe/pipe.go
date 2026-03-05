@@ -1,4 +1,4 @@
-package utils
+package pipe
 
 import (
 	"io"
@@ -6,9 +6,9 @@ import (
 	"time"
 )
 
-// PipeBothWithIdle copies data in both directions between a and b.
+// BothWithIdle copies data in both directions between a and b.
 // It closes both sides when any direction finishes or when idle timeout elapses.
-func PipeBothWithIdle(a, b io.ReadWriteCloser, idle time.Duration) {
+func BothWithIdle(a, b io.ReadWriteCloser, idle time.Duration) {
 	var lastSeen atomic.Int64
 	lastSeen.Store(time.Now().UnixNano())
 	touch := func() { lastSeen.Store(time.Now().UnixNano()) }

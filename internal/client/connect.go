@@ -11,7 +11,8 @@ import (
 
 	"github.com/Hexrotor/f2p/internal/holepunch"
 	"github.com/Hexrotor/f2p/internal/message"
-	"github.com/Hexrotor/f2p/internal/utils"
+	"github.com/Hexrotor/f2p/internal/terminal"
+	"github.com/Hexrotor/f2p/internal/version"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
@@ -152,7 +153,7 @@ func (c *Client) attemptHolePunch(peerID peer.ID) error {
 	sigCtx, sigCancel := context.WithTimeout(c.ctx, 30*time.Second)
 	defer sigCancel()
 
-	serverNAT, sessionToken, method, tid, err := holepunch.ClientSignaling(sigCtx, c.host, peerID, natInfo)
+	serverNAT, sessionToken, method, tid, err := holepunch.ClientSignaling(sigCtx, c.host, peerID, natInfo, c.config.Common.Protocol)
 	if err != nil {
 		return fmt.Errorf("signaling failed: %w", err)
 	}
@@ -231,7 +232,7 @@ func (c *Client) setupQUICProtocol(peerID peer.ID) error {
 	c.streamMutex.Unlock()
 
 	if err := c.authenticateWithServer(); err != nil {
-		if errors.Is(err, utils.ErrPasswordInterrupted) {
+		if errors.Is(err, terminal.ErrPasswordInterrupted) {
 			c.setShutdownReason("user interrupt (password input)")
 			time.Sleep(1 * time.Second)
 			c.cancel()
@@ -243,7 +244,7 @@ func (c *Client) setupQUICProtocol(peerID peer.ID) error {
 	if err := c.verifyServiceConfiguration(); err != nil {
 		ctrlStream.Close()
 		c.setShutdownReason("service verification failed (configuration error)")
-		fmt.Printf("Service verification failed - this should be your configuration issue!\nPlease check your client configuration and ensure services exist on server.\n")
+		slog.Error("Service verification failed - check your client configuration and ensure services exist on server")
 		c.cancel()
 		return fmt.Errorf("service verification failed: %v", err)
 	}
@@ -259,7 +260,7 @@ func (c *Client) setupQUICProtocol(peerID peer.ID) error {
 
 // setupLibp2pProtocol is the original connection flow using libp2p streams.
 func (c *Client) setupLibp2pProtocol(connCtx context.Context, peerID peer.ID) error {
-	controlProto := protocol.ID(utils.ControlProtocol(c.config.Common.Protocol))
+	controlProto := protocol.ID(version.ControlProtocol(c.config.Common.Protocol))
 	controlStream, err := c.host.NewStream(connCtx, peerID, controlProto)
 	if err != nil {
 		return fmt.Errorf("failed to create control stream: %v", err)
@@ -275,7 +276,7 @@ func (c *Client) setupLibp2pProtocol(connCtx context.Context, peerID peer.ID) er
 	c.streamMutex.Unlock()
 
 	if err := c.authenticateWithServer(); err != nil {
-		if errors.Is(err, utils.ErrPasswordInterrupted) {
+		if errors.Is(err, terminal.ErrPasswordInterrupted) {
 			c.setShutdownReason("user interrupt (password input)")
 			time.Sleep(1 * time.Second)
 			c.cancel()
@@ -287,7 +288,7 @@ func (c *Client) setupLibp2pProtocol(connCtx context.Context, peerID peer.ID) er
 	if err := c.verifyServiceConfiguration(); err != nil {
 		controlStream.Close()
 		c.setShutdownReason("service verification failed (configuration error)")
-		fmt.Printf("Service verification failed - this should be your configuration issue!\nPlease check your client configuration and ensure services exist on server.\n")
+		slog.Error("Service verification failed - check your client configuration and ensure services exist on server")
 		c.cancel()
 		return fmt.Errorf("service verification failed: %v", err)
 	}
@@ -324,9 +325,9 @@ func (c *Client) openDataStream(useZstd bool) (io.ReadWriteCloser, error) {
 	}
 
 	// Fall back to libp2p
-	dataProto := protocol.ID(utils.DataProtocol(c.config.Common.Protocol))
+	dataProto := protocol.ID(version.DataProtocol(c.config.Common.Protocol))
 	if useZstd {
-		dataProto = protocol.ID(utils.DataProtocolZstd(c.config.Common.Protocol))
+		dataProto = protocol.ID(version.DataProtocolZstd(c.config.Common.Protocol))
 	}
 	ctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
 	defer cancel()

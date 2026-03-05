@@ -12,7 +12,7 @@ import (
 	"github.com/Hexrotor/f2p/internal/config"
 	"github.com/Hexrotor/f2p/internal/logger"
 	"github.com/Hexrotor/f2p/internal/server"
-	"github.com/Hexrotor/f2p/internal/utils"
+	"github.com/Hexrotor/f2p/internal/terminal"
 )
 
 const DefaultConfigFile = "config.toml"
@@ -94,7 +94,7 @@ func main() {
 	fmt.Printf("Loaded configuration from: %s\n", configPath)
 
 	if cfg.IsServer {
-		if err := runServer(cfg); err != nil {
+		if err := runServer(cfg, configPath); err != nil {
 			fmt.Printf("Server error: %v\n", err)
 			os.Exit(1)
 		}
@@ -106,8 +106,7 @@ func main() {
 	}
 }
 
-func runServer(cfg *config.Config) error {
-	configPath := getConfigPathFromArgs()
+func runServer(cfg *config.Config, configPath string) error {
 	if err := config.Save(cfg, configPath); err != nil {
 		fmt.Printf("Warning: Failed to save updated config: %v\n", err)
 	}
@@ -146,21 +145,6 @@ func runClient(cfg *config.Config) error {
 	return nil
 }
 
-func getConfigPathFromArgs() string {
-	configPath := DefaultConfigFile
-	for i := 1; i < len(os.Args); i++ {
-		arg := os.Args[i]
-		if arg == "--config" || arg == "-c" {
-			if i+1 < len(os.Args) {
-				return os.Args[i+1]
-			}
-		} else if !strings.HasPrefix(arg, "-") && configPath == DefaultConfigFile {
-			return arg
-		}
-	}
-	return configPath
-}
-
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return !os.IsNotExist(err)
@@ -192,18 +176,18 @@ func handleChangePassword(cfg *config.Config, configPath string) error {
 
 	fmt.Println("Changing server password...")
 
-	if utils.AskYesNo("Do you want to set/update a password? (y/n, n to remove password, Ctrl+c to exit): ") {
-		password, err := utils.AskPassword("Enter server password: ")
+	if terminal.AskYesNo("Do you want to set/update a password? (y/n, n to remove password, Ctrl+c to exit): ") {
+		password, err := terminal.AskPassword("Enter server password: ")
 		if err != nil {
-			if errors.Is(err, utils.ErrPasswordInterrupted) {
+			if errors.Is(err, terminal.ErrPasswordInterrupted) {
 				fmt.Println("Password change cancelled.")
 				return nil
 			}
 			return fmt.Errorf("failed to read password: %w", err)
 		}
-		confirmPassword, err := utils.AskPassword("Confirm server password: ")
+		confirmPassword, err := terminal.AskPassword("Confirm server password: ")
 		if err != nil {
-			if errors.Is(err, utils.ErrPasswordInterrupted) {
+			if errors.Is(err, terminal.ErrPasswordInterrupted) {
 				fmt.Println("Password change cancelled.")
 				return nil
 			}
@@ -237,7 +221,7 @@ func handleRegenerateIdentity(cfg *config.Config, configPath string) error {
    with existing clients. All clients will need the new shareString.
 `)
 
-	if !utils.AskYesNo("Are you sure you want to regenerate the server identity? (y/n): ") {
+	if !terminal.AskYesNo("Are you sure you want to regenerate the server identity? (y/n): ") {
 		fmt.Println("Operation cancelled.")
 		return nil
 	}

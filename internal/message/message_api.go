@@ -16,13 +16,13 @@ const (
 
 // API for control messages and convenience handshakes.
 
-// NewMessager constructs a handshake instance (exported API wrapper).
+// NewMessager constructs a Messager for the given connection.
 func NewMessager(conn io.ReadWriteCloser, cfg *config.Config, peerID peer.ID) *Messager {
-	return createMessager(conn, cfg, peerID)
+	return &Messager{conn: conn, config: cfg, peerID: peerID}
 }
 
-// PeerID returns the remote peer id (exported API wrapper).
-func (h *Messager) PeerID() peer.ID { return h.getPeerID() }
+// PeerID returns the remote peer id.
+func (h *Messager) PeerID() peer.ID { return h.peerID }
 
 // SendServerShutdownNotification sends a server shutdown notice.
 func (h *Messager) SendServerShutdownNotification() error {
@@ -92,8 +92,9 @@ func (h *Messager) SendWithTTL(msg *pb.UnifiedMessage, ttl time.Duration) error 
 	return h.sendMessage(msg)
 }
 
-// ReceiveOne 读取单个 protobuf 消息（仅用于数据流一次性握手，避免后台持续读取破坏后续原始字节）。
-// timeout>0 时若底层支持 deadline 则设置读超时。
+// ReceiveOne reads a single protobuf message. Used for one-shot data stream handshakes
+// to avoid a background reader that would consume subsequent raw bytes.
+// If timeout > 0 and the connection supports deadlines, a read deadline is applied.
 func (h *Messager) ReceiveOne(timeout time.Duration) (*pb.UnifiedMessage, error) {
 	return h.receiveMessage(timeout)
 }

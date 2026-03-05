@@ -1,4 +1,4 @@
-package utils
+package terminal
 
 import (
 	"bufio"
@@ -58,7 +58,7 @@ func AskPassword(prompt string) (string, error) {
 	}
 }
 
-// AskYesNoWithCancel behaves like AskYesNo but terminates the program on Ctrl+C.
+// AskYesNo prompts for y/n input; terminates the program on Ctrl+C.
 func AskYesNo(prompt string) bool {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)

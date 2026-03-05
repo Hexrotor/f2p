@@ -17,14 +17,6 @@ type Messager struct {
 	peerID peer.ID
 }
 
-// internal constructor used by API wrapper
-func createMessager(conn io.ReadWriteCloser, cfg *config.Config, peerID peer.ID) *Messager {
-	return &Messager{conn: conn, config: cfg, peerID: peerID}
-}
-
-// getPeerID returns the peer id (used by API wrapper)
-func (h *Messager) getPeerID() peer.ID { return h.peerID }
-
 // internal safety limits for handshake/control frames
 const maxProtoMsgSize = 4 << 20 // 4 MiB
 

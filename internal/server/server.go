@@ -2,16 +2,18 @@ package server
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/Hexrotor/f2p/internal/compress"
 	"github.com/Hexrotor/f2p/internal/config"
 	"github.com/Hexrotor/f2p/internal/holepunch"
 	"github.com/Hexrotor/f2p/internal/message"
-	"github.com/Hexrotor/f2p/internal/utils"
+	"github.com/Hexrotor/f2p/internal/version"
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/crypto"
@@ -86,14 +88,14 @@ func (s *Server) generateFixedKey() (crypto.PrivKey, error) {
 		slog.Warn("Failed to load saved private key, generating new one", "error", err)
 	}
 
-	privKey, _, err := crypto.GenerateEd25519Key(nil)
+	privKey, _, err := crypto.GenerateEd25519Key(rand.Reader)
 	return privKey, err
 }
 
 func (s *Server) Start() error {
 	slog.Info("Starting F2P Server")
 
-	utils.ConfigureZstdParams(
+	compress.ConfigureZstdParams(
 		s.config.Common.ZstdLevel,
 		s.config.Common.ZstdMinSizeB,
 		s.config.Common.ZstdChunkSizeKB*1024,
@@ -127,7 +129,7 @@ func (s *Server) Start() error {
 			autorelay.WithMinInterval(time.Minute*15),
 			autorelay.WithNumRelays(3),
 		),
-		libp2p.UserAgent(utils.GetUserAgent()),
+		libp2p.UserAgent(version.UserAgent()),
 	}
 
 	// ConnManager: 控制空闲连接数量，超过 HighWater 时修剪最不活跃的连接
@@ -165,16 +167,16 @@ func (s *Server) Start() error {
 	// We use protocol /control for f2p message communication
 	// Use /data for no zstd compression data transfer
 	// Use /data+zstd for smart zstd compression transfer
-	ctrlProto := protocol.ID(utils.ControlProtocol(s.config.Common.Protocol))
-	dataProto := protocol.ID(utils.DataProtocol(s.config.Common.Protocol))
-	dataZstdProto := protocol.ID(utils.DataProtocolZstd(s.config.Common.Protocol))
+	ctrlProto := protocol.ID(version.ControlProtocol(s.config.Common.Protocol))
+	dataProto := protocol.ID(version.DataProtocol(s.config.Common.Protocol))
+	dataZstdProto := protocol.ID(version.DataProtocolZstd(s.config.Common.Protocol))
 
 	s.host.SetStreamHandler(ctrlProto, s.handleControlStream)
 	s.host.SetStreamHandler(dataProto, s.handleDataStream)
 	s.host.SetStreamHandler(dataZstdProto, s.handleDataStream)
 
 	// Register hole punch signaling handler
-	s.host.SetStreamHandler(protocol.ID(holepunch.SignalingProtocol), s.handleHolePunchSignaling)
+	s.host.SetStreamHandler(protocol.ID(version.SignalingProtocol(s.config.Common.Protocol)), s.handleHolePunchSignaling)
 
 	bootstrapPeers := dht.GetDefaultBootstrapPeerAddrInfos()
 

@@ -2,7 +2,6 @@ package client
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"log/slog"
 	"strings"
@@ -37,51 +36,71 @@ func (c *Client) monitorControlStream() {
 		return
 	}
 
-	lastHeartbeat := time.Now()
-	// Expect server ping every 10s; treat >25s silence as failure (includes some margin)
-	heartbeatTimeout := 25 * time.Second
+	c.streamMutex.RLock()
+	disp := c.controlDispatcher
+	m := c.controlMessager
+	c.streamMutex.RUnlock()
+	if disp == nil || m == nil {
+		return
+	}
+
+	// Feed incoming messages into a channel so the select is purely channel-driven.
+	type msgResult struct {
+		msg *pb.UnifiedMessage
+		err error
+	}
+	readerCtx, readerCancel := context.WithCancel(c.ctx)
+	defer readerCancel()
+
+	msgCh := make(chan msgResult, 1)
+	go func() {
+		for {
+			ctx, cancel := context.WithTimeout(readerCtx, 60*time.Second)
+			msg, err := disp.WaitFor(ctx,
+				pb.MessageType_HEARTBEAT,
+				pb.MessageType_SERVER_SHUTDOWN,
+				pb.MessageType_SERVICE_RESPONSE,
+			)
+			cancel()
+			if err != nil {
+				if ctx.Err() == context.DeadlineExceeded {
+					continue
+				}
+				msgCh <- msgResult{err: err}
+				return
+			}
+			msgCh <- msgResult{msg: msg}
+		}
+	}()
+
+	// Expect server ping every 10s; treat >25s silence as failure
+	heartbeatTimer := time.NewTimer(25 * time.Second)
+	defer heartbeatTimer.Stop()
+
 	for {
 		select {
 		case <-c.ctx.Done():
 			return
-		default:
-			if time.Since(lastHeartbeat) > heartbeatTimeout {
-				slog.Warn("Heartbeat timeout, closing control stream to reconnect", "server", c.serverPeerID.ShortString())
-				c.closeControlStream()
-				return
-			}
-			c.streamMutex.RLock()
-			disp := c.controlDispatcher
-			m := c.controlMessager
-			c.streamMutex.RUnlock()
-			if disp == nil || m == nil {
-				time.Sleep(200 * time.Millisecond)
-				continue
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			msg, err := disp.WaitFor(ctx, pb.MessageType_HEARTBEAT, pb.MessageType_SERVER_SHUTDOWN, pb.MessageType_SERVICE_RESPONSE)
-			cancel()
-			if err != nil {
-				if ctx.Err() != nil { // timeout; loop again
-					continue
-				}
-				if err != io.EOF && !strings.Contains(err.Error(), "closed") {
-					slog.Error("Control stream dispatcher error", "error", err)
+		case <-heartbeatTimer.C:
+			slog.Warn("Heartbeat timeout, closing control stream to reconnect", "server", c.serverPeerID.ShortString())
+			c.closeControlStream()
+			return
+		case r := <-msgCh:
+			if r.err != nil {
+				if r.err != io.EOF && !strings.Contains(r.err.Error(), "closed") {
+					slog.Error("Control stream dispatcher error", "error", r.err)
 				}
 				c.closeControlStream()
 				return
 			}
-			if msg.IsShutdownMessage() {
-				slog.Info("Server shutdown notification received", "server", c.serverPeerID.ShortString(), "message", msg.Message)
-				fmt.Printf("Server shutdown notification received [Server: %s]\n", c.serverPeerID.ShortString())
-				fmt.Printf("Message: %s\n", msg.Message)
+			if r.msg.IsShutdownMessage() {
+				slog.Info("Server shutdown notification received", "server", c.serverPeerID.ShortString(), "message", r.msg.Message)
 				serverShutdownReceived = true
 				return
 			}
-			if msg.Type == pb.MessageType_HEARTBEAT {
-				lastHeartbeat = time.Now()
-				// server ping -> client pong
-				if msg.Message == "ping" {
+			if r.msg.Type == pb.MessageType_HEARTBEAT {
+				heartbeatTimer.Reset(25 * time.Second)
+				if r.msg.Message == "ping" {
 					if err := m.SendHeartbeatAck(); err != nil {
 						slog.Error("Failed to send heartbeat ack", "error", err, "server", c.serverPeerID.ShortString())
 						c.closeControlStream()
@@ -90,7 +109,7 @@ func (c *Client) monitorControlStream() {
 				}
 				continue
 			}
-			slog.Info("Received control message", "type", msg.Type, "message", msg.Message)
+			slog.Info("Received control message", "type", r.msg.Type, "message", r.msg.Message)
 		}
 	}
 }

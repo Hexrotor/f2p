@@ -39,7 +39,13 @@ This program follows a Client/Server architecture. The server and backend servic
 
 - Peer Discovery: libp2p (derived from IPFS) can join the IPFS DHT. In the DHT, a client resolves a server's `PeerID` to its `multiaddr` list, then attempts a connection.
 - Connection Establishment: libp2p provides automatic relay and NAT hole punching. The server registers some peers as relays. A client often first connects via a relay multiaddr, then libp2p attempts to upgrade to a direct hole-punched connection. **Use [NatTypeTester](https://github.com/HMBSbige/NatTypeTester) to test whether your network environment supports NAT hole punching.**
-- Current Limitation: If the server has no public IPv4 and also cannot be reached via IPv6 or hole punching, the final connection fails. libp2p limits relay usage, in my tests, without enabling `WithAllowLimitedConn` in code it can't freely open streams over relays. Relays appear to allow at most one stream and have limited bandwidth plus higher latency, so this project does not enable relayed streaming for now.
+- Custom NAT4 Hole Punching: When libp2p's built-in DCUtR fails to upgrade a relay connection to direct, F2P falls back to its own UDP hole punching implementation. It uses STUN to detect NAT type, then chooses an appropriate strategy:
+  - **Cone-to-Cone**: Both sides send to each other's known public endpoint.
+  - **Symmetric-to-Cone (birthday attack)**: The Symmetric side opens many sockets; the Cone side sends to random ports; any match yields a punched path.
+  - **Easy Symmetric-to-Easy Symmetric**: Uses port prediction for NATs with sequential port allocation.
+
+  Once punched, a direct QUIC connection is established over the UDP socket for all subsequent data transfer. Custom STUN servers can be specified via `stun_servers` under `[common]` in the config file.
+- Current Limitation: If the server has no public IPv4 and also cannot be reached via IPv6 or hole punching, the connection fails. libp2p relays impose a total traffic limit with high latency, so this project does not use relay for data transfer.
 
 ## Command Line
 
@@ -140,7 +146,11 @@ zstd_chunk_size_kb = 32   # Chunk size
 
 # zstd
 
-Considring p2p may have constrained bandwidth, zstd compression is used. The project chooses the CGO-based zstd implementation; pure Go variants retain large RAM until GC. Each data frame is evaluated—if compression yields larger output the raw data is sent instead (CPU spent is lost but generally reduced bandwidth). Default level is currently 20, may adjust for low-CPU devices later. Suggestions welcome via issue/PR.
+Considering p2p may have constrained bandwidth, zstd compression is used. The project chooses the CGO-based zstd implementation; pure Go variants retain large RAM until GC. Each data frame is evaluated—if compression yields larger output the raw data is sent instead (CPU spent is lost but generally reduced bandwidth). Default level is currently 20, may adjust for low-CPU devices later. Suggestions welcome via issue/PR.
+
+## Acknowledgments
+
+- The NAT4 hole punching implementation is inspired by the design of [EasyTier](https://github.com/EasyTier/EasyTier).
 
 ## License
 

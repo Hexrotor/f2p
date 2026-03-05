@@ -14,7 +14,8 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/BurntSushi/toml"
-	"github.com/Hexrotor/f2p/internal/utils"
+	"github.com/Hexrotor/f2p/internal/terminal"
+	"github.com/Hexrotor/f2p/internal/version"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
@@ -336,7 +337,7 @@ func writeTomlHeader(content *strings.Builder, isServer bool) {
 
 func createDefaultCommonConfig() CommonConfig {
 	return CommonConfig{
-		Protocol: utils.GetProtocol(),
+		Protocol: version.GetProtocol(),
 		Listen: []string{
 			"/ip4/0.0.0.0/tcp/0",
 			"/ip6/::/tcp/0",
@@ -408,17 +409,17 @@ func GenerateInteractiveConfig(configPath string) error {
 	fmt.Println("F2P Configuration Setup")
 	fmt.Println()
 
-	isServer := utils.AskYesNo("Are you setting up a server? (y/n): ")
+	isServer := terminal.AskYesNo("Are you setting up a server? (y/n): ")
 
 	var cfg Config
 	if isServer {
 		var serverPassword string
-		if utils.AskYesNo("Do you want to set a password for authentication? (y/n): ") {
-			password, err := utils.AskPassword("Enter password: ")
+		if terminal.AskYesNo("Do you want to set a password for authentication? (y/n): ") {
+			password, err := terminal.AskPassword("Enter password: ")
 			if err != nil {
 				return fmt.Errorf("failed to read password: %v", err)
 			}
-			confirmPassword, err := utils.AskPassword("Confirm password: ")
+			confirmPassword, err := terminal.AskPassword("Confirm password: ")
 			if err != nil {
 				return fmt.Errorf("failed to read password: %v", err)
 			}
@@ -536,7 +537,7 @@ func askStringWithCancel(prompt string) string {
 				os.Exit(1)
 			}
 			if res.response == "" {
-				if utils.AskYesNo("No input provided. Do you want to cancel configuration? (y/n): ") {
+				if terminal.AskYesNo("No input provided. Do you want to cancel configuration? (y/n): ") {
 					fmt.Println("Configuration cancelled by user")
 					os.Exit(1)
 				}

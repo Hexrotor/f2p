@@ -5,13 +5,8 @@ import (
 	"net"
 	"time"
 
-	"github.com/Hexrotor/f2p/internal/utils"
+	"github.com/Hexrotor/f2p/internal/pipe"
 )
-
-func (s *Server) proxyConnection(conn1, conn2 io.ReadWriteCloser) {
-	const idleTimeout = 60 * time.Second
-	utils.PipeBothWithIdle(conn1, conn2, idleTimeout)
-}
 
 // connectAndProxy dials target using protocolType ("tcp" or "udp") and proxies rw <-> targetConn.
 func (s *Server) connectAndProxy(rw io.ReadWriteCloser, protocolType string, target string) error {
@@ -36,6 +31,7 @@ func (s *Server) connectAndProxy(rw io.ReadWriteCloser, protocolType string, tar
 	if err != nil {
 		return err
 	}
-	s.proxyConnection(rw, targetConn)
+	const idleTimeout = 60 * time.Second
+	pipe.BothWithIdle(rw, targetConn, idleTimeout)
 	return nil
 }

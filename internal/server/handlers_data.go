@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/Hexrotor/f2p/internal/message"
-	"github.com/Hexrotor/f2p/internal/utils"
+	"github.com/Hexrotor/f2p/internal/compress"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
@@ -41,7 +41,7 @@ func (s *Server) handleServiceStreamWithCompression(stream network.Stream, clien
 // handleDataConnection processes a data stream from any source (libp2p or QUIC).
 func (s *Server) handleDataConnection(rw io.ReadWriteCloser, clientPeer peer.ID, useZstd bool) error {
 	if useZstd {
-		z, err := utils.NewZstdDuplex(rw)
+		z, err := compress.NewZstdDuplex(rw)
 		if err != nil {
 			slog.Error("Failed to init zstd on data stream", "error", err)
 			rw.Close()
@@ -61,11 +61,8 @@ func (s *Server) handleDataConnection(rw io.ReadWriteCloser, clientPeer peer.ID,
 	clientID := clientPeer.String()
 	slog.Info("Forwarding request", "client", clientID, "service", serviceName, "protocol", protocolType, "target", targetService.Target, "compress", useZstd)
 
-	if dz, ok := rw.(interface {
-		SetFields(string, string, string, string) *utils.ZstdDuplex
-	}); ok {
-		// Only service & protocol now (side/peer already set)
-		dz.SetFields("", serviceName, "", protocolType)
+	if dz, ok := rw.(*compress.ZstdDuplex); ok {
+		dz.SetInfo("", serviceName, "", protocolType)
 	}
 
 	if err := s.connectAndProxy(rw, protocolType, targetService.Target); err != nil {

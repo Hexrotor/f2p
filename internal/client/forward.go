@@ -4,9 +4,9 @@ import (
 	"io"
 	"log/slog"
 
+	"github.com/Hexrotor/f2p/internal/compress"
 	"github.com/Hexrotor/f2p/internal/config"
 	"github.com/Hexrotor/f2p/internal/message"
-	"github.com/Hexrotor/f2p/internal/utils"
 )
 
 func (c *Client) startLocalServices() {
@@ -56,7 +56,7 @@ func (c *Client) handleLocalConnForProtocol(local io.ReadWriteCloser, localServi
 
 	var rw io.ReadWriteCloser = serverStream
 	if useZstd {
-		z, err := utils.NewZstdDuplex(serverStream)
+		z, err := compress.NewZstdDuplex(serverStream)
 		if err != nil {
 			slog.Error("Failed to init zstd on client data stream", "error", err)
 			serverStream.Close()

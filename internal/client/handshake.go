@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/Hexrotor/f2p/internal/message"
-	"github.com/Hexrotor/f2p/internal/utils"
+	"github.com/Hexrotor/f2p/internal/terminal"
 	pb "github.com/Hexrotor/f2p/proto"
 )
 
@@ -25,9 +25,7 @@ func (c *Client) verifyServiceConfiguration() error {
 		for _, protocolType := range service.Protocol {
 			slog.Debug("Verifying service", "name", service.Name, "protocol", protocolType)
 			if err := c.verifyServiceOnControlStream(service.Name, protocolType, service.Password); err != nil {
-				slog.Error("Service verification failed", "service", service.Name, "protocol", protocolType, "error", err)
-				fmt.Printf("Service verification failed for '%s' (%s): %v\n", service.Name, protocolType, err)
-				fmt.Println("Client will terminate due to service verification failure")
+				slog.Error("Service verification failed, client will terminate", "service", service.Name, "protocol", protocolType, "error", err)
 				return err
 			}
 			slog.Info("Service verified successfully", "service", service.Name, "protocol", protocolType)
@@ -136,9 +134,9 @@ func (c *Client) authenticateWithServer() error {
 		if has {
 			password = cached
 		} else {
-			password, err = utils.AskPassword("Enter server password: ")
+			password, err = terminal.AskPassword("Enter server password: ")
 			if err != nil {
-				if errors.Is(err, utils.ErrPasswordInterrupted) {
+				if errors.Is(err, terminal.ErrPasswordInterrupted) {
 					// user cancelled: proactively notify server so it can stop waiting auth
 					_ = m.SendClientShutdownNotification()
 					slog.Debug("Sent client shutdown notification")

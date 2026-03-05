@@ -10,13 +10,12 @@ import (
 	"log/slog"
 	"net"
 
+	"github.com/Hexrotor/f2p/internal/version"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 )
-
-const SignalingProtocol = "/f2p-forward/0.0.2/holepunch"
 
 // writeSignalMsg writes a length-prefixed JSON message.
 func writeSignalMsg(w io.Writer, msg *SignalMsg) error {
@@ -59,10 +58,10 @@ func readSignalMsg(r io.Reader) (*SignalMsg, error) {
 
 // ClientSignaling initiates hole punch signaling with the server over a libp2p stream.
 // Returns the server's NAT info, session token, punch method, and transaction ID.
-func ClientSignaling(ctx context.Context, h host.Host, serverID peer.ID, myNAT *NATInfo) (*NATInfo, []byte, PunchMethod, uint32, error) {
+func ClientSignaling(ctx context.Context, h host.Host, serverID peer.ID, myNAT *NATInfo, baseProtocol string) (*NATInfo, []byte, PunchMethod, uint32, error) {
 	// Open signaling stream with AllowLimitedConn (works over relay)
 	ctx = network.WithAllowLimitedConn(ctx, "f2p-holepunch")
-	stream, err := h.NewStream(ctx, serverID, protocol.ID(SignalingProtocol))
+	stream, err := h.NewStream(ctx, serverID, protocol.ID(version.SignalingProtocol(baseProtocol)))
 	if err != nil {
 		return nil, nil, PunchNone, 0, fmt.Errorf("open signaling stream: %w", err)
 	}
