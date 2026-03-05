@@ -4,7 +4,7 @@ import "strings"
 
 const (
 	AppName  = "f2p"
-	Version  = "0.0.3"
+	Version  = "0.1.0"
 	Protocol = "f2p-forward/0.0.2"
 )
 
