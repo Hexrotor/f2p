@@ -39,8 +39,8 @@ type Server struct {
 	clientsMutex         sync.RWMutex
 
 	// Hole punching
-	natInfo    *holepunch.NATInfo
-	natInfoMu  sync.RWMutex
+	natInfo     *holepunch.NATInfo
+	natInfoMu   sync.RWMutex
 	natDetected bool
 }
 

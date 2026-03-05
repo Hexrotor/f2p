@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/Hexrotor/f2p/internal/message"
 	"github.com/Hexrotor/f2p/internal/compress"
+	"github.com/Hexrotor/f2p/internal/message"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 )

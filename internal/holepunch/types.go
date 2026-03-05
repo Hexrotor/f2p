@@ -10,12 +10,12 @@ import (
 type NATType int
 
 const (
-	NATUnknown         NATType = iota
-	NATOpen                    // No NAT / public IP
-	NATCone                    // Full Cone / Restricted / Port Restricted (mapping is endpoint-independent)
-	NATSymmetricEasyInc        // Symmetric with predictable incrementing ports
-	NATSymmetricEasyDec        // Symmetric with predictable decrementing ports
-	NATSymmetricHard           // Symmetric with random port allocation
+	NATUnknown          NATType = iota
+	NATOpen                     // No NAT / public IP
+	NATCone                     // Full Cone / Restricted / Port Restricted (mapping is endpoint-independent)
+	NATSymmetricEasyInc         // Symmetric with predictable incrementing ports
+	NATSymmetricEasyDec         // Symmetric with predictable decrementing ports
+	NATSymmetricHard            // Symmetric with random port allocation
 )
 
 func (n NATType) String() string {
@@ -51,10 +51,10 @@ func (n NATType) IsEasySymmetric() bool {
 type PunchMethod int
 
 const (
-	PunchNone           PunchMethod = iota
-	PunchConeToCone                 // Both sides are Cone, simple exchange
-	PunchSymToCone                  // Birthday attack: Sym client, Cone server
-	PunchEasySymToEasySym           // Port prediction: both Easy Symmetric
+	PunchNone             PunchMethod = iota
+	PunchConeToCone                   // Both sides are Cone, simple exchange
+	PunchSymToCone                    // Birthday attack: Sym client, Cone server
+	PunchEasySymToEasySym             // Port prediction: both Easy Symmetric
 )
 
 // DeterminePunchMethod chooses strategy based on both sides' NAT types.

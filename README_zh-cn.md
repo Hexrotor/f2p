@@ -1,6 +1,8 @@
 # F2P
 
-[![Build test](https://github.com/Hexrotor/f2p/actions/workflows/testBuild.yml/badge.svg)](https://github.com/Hexrotor/f2p/actions/workflows/testBuild.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![CI](https://github.com/Hexrotor/f2p/actions/workflows/testBuild.yml/badge.svg)](https://github.com/Hexrotor/f2p/actions/workflows/testBuild.yml) [![Release](https://img.shields.io/github/v/release/Hexrotor/f2p)](https://github.com/Hexrotor/f2p/releases/latest) [![Downloads](https://img.shields.io/github/downloads/Hexrotor/f2p/total)](https://github.com/Hexrotor/f2p/releases) [![Go Report Card](https://goreportcard.com/badge/github.com/Hexrotor/f2p)](https://goreportcard.com/report/github.com/Hexrotor/f2p) [![Go Version](https://img.shields.io/github/go-mod/go-version/Hexrotor/f2p)](go.mod) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20Android-blue)
 
 F2P 是一个基于 libp2p 的远程端口转发程序，支持 TCP+UDP，使用 Kademlia DHT 去中心化网络实现节点发现，配合 IPv6 或 UDP NAT 打洞建立直连，无需依赖公网 IP 即可实现端口转发。
 

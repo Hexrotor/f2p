@@ -2,7 +2,9 @@
 
 [[中文]](README_zh-cn.md)
 
-[![Build test](https://github.com/Hexrotor/f2p/actions/workflows/testBuild.yml/badge.svg)](https://github.com/Hexrotor/f2p/actions/workflows/testBuild.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![CI](https://github.com/Hexrotor/f2p/actions/workflows/testBuild.yml/badge.svg)](https://github.com/Hexrotor/f2p/actions/workflows/testBuild.yml) [![Release](https://img.shields.io/github/v/release/Hexrotor/f2p)](https://github.com/Hexrotor/f2p/releases/latest) [![Downloads](https://img.shields.io/github/downloads/Hexrotor/f2p/total)](https://github.com/Hexrotor/f2p/releases) [![Go Report Card](https://goreportcard.com/badge/github.com/Hexrotor/f2p)](https://goreportcard.com/report/github.com/Hexrotor/f2p) [![Go Version](https://img.shields.io/github/go-mod/go-version/Hexrotor/f2p)](go.mod) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20Android-blue)
 
 F2P is a remote port forwarding tool built on libp2p. It supports TCP + UDP and uses the Kademlia DHT for decentralized peer discovery; with IPv6 or UDP NAT hole punching it establishes direct connections, enabling port forwarding without public IP.
 
