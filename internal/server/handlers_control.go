@@ -126,6 +126,9 @@ func (s *Server) monitorControlStream(clientSession *ClientSession) {
 				if ctx.Err() == context.DeadlineExceeded {
 					continue // just a timeout, keep reading
 				}
+				if readerCtx.Err() != nil {
+					return // parent cancelled, exit silently
+				}
 				msgCh <- msgResult{err: err}
 				return
 			}

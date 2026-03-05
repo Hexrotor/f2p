@@ -66,6 +66,9 @@ func (c *Client) monitorControlStream() {
 				if ctx.Err() == context.DeadlineExceeded {
 					continue
 				}
+				if readerCtx.Err() != nil {
+					return // parent cancelled, exit silently
+				}
 				msgCh <- msgResult{err: err}
 				return
 			}
