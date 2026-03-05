@@ -164,7 +164,7 @@ func (s *Server) monitorControlStream(clientSession *ClientSession) {
 			waitingAck = true
 		case r := <-msgCh:
 			if r.err != nil {
-				if r.err != io.EOF && !strings.Contains(r.err.Error(), "stream reset") {
+				if r.err != io.EOF && !strings.Contains(r.err.Error(), "stream reset") && !strings.Contains(r.err.Error(), "closed") {
 					slog.Error("Control stream read error", "error", r.err)
 				}
 				return

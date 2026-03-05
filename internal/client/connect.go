@@ -55,6 +55,9 @@ func (c *Client) connectToServer(peerID peer.ID) error {
 
 	c.ResetBackoff()
 
+	// Protect server connection from ConnManager pruning
+	c.host.ConnManager().TagPeer(peerID, "f2p-server", 100)
+
 	// Check if connection is relay-only (Limited).
 	// libp2p typically connects via relay first, then DCUtR upgrades to direct.
 	// Wait for DCUtR before falling back to custom hole punching.
